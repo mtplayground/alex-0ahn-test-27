@@ -64,6 +64,35 @@ describe('Simulation', () => {
     expect(freshVelocity.x.get(1, 1)).not.toBe(999)
     expect(freshVelocity.y.get(1, 1)).not.toBe(999)
   })
+
+  it('updates runtime config and can reset the simulation fields', () => {
+    const simulation = new Simulation({
+      size: 4,
+      diffusion: 0.0001,
+      viscosity: 0.00002,
+      decay: 0.99,
+      iterations: 2,
+    })
+
+    simulation.setDiffusion(0.0003)
+    simulation.setViscosity(0.0005)
+    simulation.setDecay(0.97)
+    simulation.addDensity(2, 2, 10)
+    simulation.addVelocity(2, 2, 3, -2)
+    simulation.step(0.5)
+    simulation.reset()
+
+    expect(simulation.getConfig()).toMatchObject({
+      size: 4,
+      diffusion: 0.0003,
+      viscosity: 0.0005,
+      decay: 0.97,
+      iterations: 2,
+    })
+    expect(averageAbsoluteInteriorValue(simulation.getDensity())).toBe(0)
+    expect(averageAbsoluteInteriorValue(simulation.getVelocity().x)).toBe(0)
+    expect(averageAbsoluteInteriorValue(simulation.getVelocity().y)).toBe(0)
+  })
 })
 
 function averageAbsoluteInteriorValue(grid: Grid): number {

@@ -4,6 +4,7 @@ import {
 } from './input/pointerController'
 import { type AnimationLoopController, createAnimationLoop } from './loop'
 import { DensityRenderer } from './render/densityRenderer'
+import { getRenderTheme, type ThemeId } from './render/palette'
 import { VelocityOverlayRenderer } from './render/velocityOverlayRenderer'
 import { type CanvasViewport, resizeCanvasToDisplaySize } from './resize'
 import { Simulation } from './sim/FluidSimulation'
@@ -33,16 +34,45 @@ interface AppElements {
   title: HTMLElement
   fps: HTMLElement
   velocityToggle: HTMLButtonElement
+  viscositySlider: HTMLInputElement
+  viscosityValue: HTMLElement
+  diffusionSlider: HTMLInputElement
+  diffusionValue: HTMLElement
+  decaySlider: HTMLInputElement
+  decayValue: HTMLElement
+  resolutionSelect: HTMLSelectElement
+  themeSelect: HTMLSelectElement
+  pauseButton: HTMLButtonElement
+  resetButton: HTMLButtonElement
 }
+
+interface RuntimeControls {
+  size: number
+  viscosity: number
+  diffusion: number
+  decay: number
+  themeId: ThemeId
+}
+
+const DEFAULT_CONTROLS: RuntimeControls = {
+  size: 96,
+  viscosity: 0.00002,
+  diffusion: 0.0001,
+  decay: 0.992,
+  themeId: 'water-blue',
+}
+
+const RESOLUTION_OPTIONS = [64, 96, 128] as const
 
 class App implements AppController {
   private readonly context: CanvasRenderingContext2D
   private readonly loop: AnimationLoopController
-  private readonly pointerController: PointerController
   private readonly renderer: DensityRenderer
   private readonly velocityOverlayRenderer: VelocityOverlayRenderer
-  private readonly simulation: Simulation
-  private readonly simulationSize: number
+  private simulation: Simulation
+  private pointerController: PointerController
+  private controls: RuntimeControls
+  private paused = false
   private showVelocityOverlay = false
   private viewport: CanvasViewport
 
@@ -57,20 +87,13 @@ class App implements AppController {
     }
 
     this.context = context
-    this.renderer = new DensityRenderer()
+    this.controls = { ...DEFAULT_CONTROLS }
+    this.renderer = new DensityRenderer({
+      theme: getRenderTheme(this.controls.themeId),
+    })
     this.velocityOverlayRenderer = new VelocityOverlayRenderer()
-    this.simulationSize = 96
-    this.simulation = new Simulation({
-      size: this.simulationSize,
-      diffusion: 0.0001,
-      viscosity: 0.00002,
-      iterations: 20,
-    })
-    this.pointerController = attachPointerController({
-      canvas: this.elements.canvas,
-      simulation: this.simulation,
-      gridSize: this.simulationSize,
-    })
+    this.simulation = this.createSimulation()
+    this.pointerController = this.attachPointerController()
     this.viewport = resizeCanvasToDisplaySize(
       this.elements.canvas,
       this.context,
@@ -98,23 +121,93 @@ class App implements AppController {
 
   start(): void {
     this.windowObject.addEventListener('resize', this.handleResize)
-    this.elements.velocityToggle.addEventListener(
-      'click',
-      this.handleToggleClick,
-    )
-    this.syncVelocityToggle()
+    this.bindControls()
+    this.syncControls()
     this.draw()
     this.loop.start()
   }
 
   destroy(): void {
     this.windowObject.removeEventListener('resize', this.handleResize)
+    this.unbindControls()
+    this.pointerController.destroy()
+    this.loop.stop()
+  }
+
+  private createSimulation(): Simulation {
+    return new Simulation({
+      size: this.controls.size,
+      diffusion: this.controls.diffusion,
+      viscosity: this.controls.viscosity,
+      decay: this.controls.decay,
+      iterations: 20,
+    })
+  }
+
+  private attachPointerController(): PointerController {
+    return attachPointerController({
+      canvas: this.elements.canvas,
+      simulation: this.simulation,
+      gridSize: this.controls.size,
+    })
+  }
+
+  private bindControls(): void {
+    this.elements.velocityToggle.addEventListener(
+      'click',
+      this.handleToggleClick,
+    )
+    this.elements.viscositySlider.addEventListener(
+      'input',
+      this.handleViscosityInput,
+    )
+    this.elements.diffusionSlider.addEventListener(
+      'input',
+      this.handleDiffusionInput,
+    )
+    this.elements.decaySlider.addEventListener('input', this.handleDecayInput)
+    this.elements.resolutionSelect.addEventListener(
+      'change',
+      this.handleResolutionChange,
+    )
+    this.elements.themeSelect.addEventListener('change', this.handleThemeChange)
+    this.elements.pauseButton.addEventListener('click', this.handlePauseClick)
+    this.elements.resetButton.addEventListener('click', this.handleResetClick)
+  }
+
+  private unbindControls(): void {
     this.elements.velocityToggle.removeEventListener(
       'click',
       this.handleToggleClick,
     )
-    this.pointerController.destroy()
-    this.loop.stop()
+    this.elements.viscositySlider.removeEventListener(
+      'input',
+      this.handleViscosityInput,
+    )
+    this.elements.diffusionSlider.removeEventListener(
+      'input',
+      this.handleDiffusionInput,
+    )
+    this.elements.decaySlider.removeEventListener(
+      'input',
+      this.handleDecayInput,
+    )
+    this.elements.resolutionSelect.removeEventListener(
+      'change',
+      this.handleResolutionChange,
+    )
+    this.elements.themeSelect.removeEventListener(
+      'change',
+      this.handleThemeChange,
+    )
+    this.elements.pauseButton.removeEventListener(
+      'click',
+      this.handlePauseClick,
+    )
+    this.elements.resetButton.removeEventListener(
+      'click',
+      this.handleResetClick,
+    )
   }
 
   private readonly handleResize = (): void => {
@@ -133,11 +226,81 @@ class App implements AppController {
 
   private readonly handleToggleClick = (): void => {
     this.showVelocityOverlay = !this.showVelocityOverlay
-    this.syncVelocityToggle()
+    this.syncControls()
     this.draw()
   }
 
+  private readonly handleViscosityInput = (): void => {
+    const viscosity = readSliderValue(this.elements.viscositySlider)
+    this.controls.viscosity = viscosity
+    this.simulation.setViscosity(viscosity)
+    this.syncControls()
+  }
+
+  private readonly handleDiffusionInput = (): void => {
+    const diffusion = readSliderValue(this.elements.diffusionSlider)
+    this.controls.diffusion = diffusion
+    this.simulation.setDiffusion(diffusion)
+    this.syncControls()
+  }
+
+  private readonly handleDecayInput = (): void => {
+    const decay = readSliderValue(this.elements.decaySlider)
+    this.controls.decay = decay
+    this.simulation.setDecay(decay)
+    this.syncControls()
+  }
+
+  private readonly handleResolutionChange = (): void => {
+    const size = Number(this.elements.resolutionSelect.value)
+
+    if (
+      !RESOLUTION_OPTIONS.includes(size as (typeof RESOLUTION_OPTIONS)[number])
+    ) {
+      return
+    }
+
+    this.controls.size = size
+    this.rebuildSimulation()
+    this.syncControls()
+    this.draw()
+  }
+
+  private readonly handleThemeChange = (): void => {
+    const themeId = this.elements.themeSelect.value as ThemeId
+
+    if (!isThemeId(themeId)) {
+      return
+    }
+
+    this.controls.themeId = themeId
+    this.renderer.setTheme(getRenderTheme(themeId))
+    this.syncControls()
+    this.draw()
+  }
+
+  private readonly handlePauseClick = (): void => {
+    this.paused = !this.paused
+    this.syncControls()
+  }
+
+  private readonly handleResetClick = (): void => {
+    this.rebuildSimulation()
+    this.syncControls()
+    this.draw()
+  }
+
+  private rebuildSimulation(): void {
+    this.pointerController.destroy()
+    this.simulation = this.createSimulation()
+    this.pointerController = this.attachPointerController()
+  }
+
   private step(deltaMs: number): void {
+    if (this.paused) {
+      return
+    }
+
     const dt = Math.min(deltaMs / 1000, 1 / 30)
     this.simulation.step(dt)
   }
@@ -155,7 +318,7 @@ class App implements AppController {
     }
   }
 
-  private syncVelocityToggle(): void {
+  private syncControls(): void {
     this.elements.velocityToggle.setAttribute(
       'aria-pressed',
       this.showVelocityOverlay ? 'true' : 'false',
@@ -163,6 +326,25 @@ class App implements AppController {
     this.elements.velocityToggle.textContent = this.showVelocityOverlay
       ? 'Hide velocity vectors'
       : 'Show velocity vectors'
+    this.elements.viscositySlider.value = this.controls.viscosity.toString()
+    this.elements.viscosityValue.textContent = formatScientific(
+      this.controls.viscosity,
+    )
+    this.elements.diffusionSlider.value = this.controls.diffusion.toString()
+    this.elements.diffusionValue.textContent = formatScientific(
+      this.controls.diffusion,
+    )
+    this.elements.decaySlider.value = this.controls.decay.toString()
+    this.elements.decayValue.textContent = this.controls.decay.toFixed(3)
+    this.elements.resolutionSelect.value = this.controls.size.toString()
+    this.elements.themeSelect.value = this.controls.themeId
+    this.elements.pauseButton.setAttribute(
+      'aria-pressed',
+      this.paused ? 'true' : 'false',
+    )
+    this.elements.pauseButton.textContent = this.paused
+      ? 'Resume simulation'
+      : 'Pause simulation'
   }
 }
 
@@ -178,19 +360,105 @@ export function renderApp(root: HTMLElement, title: string): void {
       <section class="hud" data-testid="app-hud">
         <p class="eyebrow">Interactive Density Renderer</p>
         <h1 data-testid="app-title">${title}</h1>
-        <p class="copy">Drag across the canvas to inject velocity, press to seed density, and optionally overlay sparse flow vectors for debugging.</p>
+        <p class="copy">Drag across the canvas to inject velocity, press to seed density, and shape the flow with a floating control panel.</p>
         <div class="metrics">
           <span class="metric-label">FPS</span>
           <span class="metric-value" data-testid="fps-counter">0.0</span>
         </div>
-        <button
-          class="toggle-button"
-          data-testid="velocity-overlay-toggle"
-          type="button"
-          aria-pressed="false"
-        >
-          Show velocity vectors
-        </button>
+      </section>
+      <section class="control-panel" data-testid="control-panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Simulation Controls</p>
+          <button
+            class="toggle-button control-inline-button"
+            data-testid="velocity-overlay-toggle"
+            type="button"
+            aria-pressed="false"
+          >
+            Show velocity vectors
+          </button>
+        </div>
+        <label class="control-field">
+          <span class="control-topline">
+            <span>Viscosity</span>
+            <output data-testid="viscosity-value">0</output>
+          </span>
+          <input
+            data-testid="viscosity-slider"
+            type="range"
+            min="0"
+            max="0.001"
+            step="0.00001"
+            value="${DEFAULT_CONTROLS.viscosity.toString()}"
+          />
+        </label>
+        <label class="control-field">
+          <span class="control-topline">
+            <span>Diffusion</span>
+            <output data-testid="diffusion-value">0</output>
+          </span>
+          <input
+            data-testid="diffusion-slider"
+            type="range"
+            min="0"
+            max="0.0015"
+            step="0.00001"
+            value="${DEFAULT_CONTROLS.diffusion.toString()}"
+          />
+        </label>
+        <label class="control-field">
+          <span class="control-topline">
+            <span>Decay</span>
+            <output data-testid="decay-value">0</output>
+          </span>
+          <input
+            data-testid="decay-slider"
+            type="range"
+            min="0.94"
+            max="1"
+            step="0.001"
+            value="${DEFAULT_CONTROLS.decay.toString()}"
+          />
+        </label>
+        <div class="control-grid">
+          <label class="control-field">
+            <span class="control-topline">
+              <span>Resolution</span>
+            </span>
+            <select data-testid="resolution-select">
+              ${RESOLUTION_OPTIONS.map(
+                (size) =>
+                  `<option value="${size.toString()}">${size.toString()} × ${size.toString()}</option>`,
+              ).join('')}
+            </select>
+          </label>
+          <label class="control-field">
+            <span class="control-topline">
+              <span>Theme</span>
+            </span>
+            <select data-testid="theme-select">
+              <option value="water-blue">Water Blue</option>
+              <option value="amber-heat">Amber Heat</option>
+            </select>
+          </label>
+        </div>
+        <div class="panel-actions">
+          <button
+            class="toggle-button control-inline-button"
+            data-testid="pause-button"
+            type="button"
+            aria-pressed="false"
+          >
+            Pause simulation
+          </button>
+          <button
+            class="toggle-button control-inline-button secondary-button"
+            data-testid="reset-button"
+            type="button"
+          >
+            Reset fluid
+          </button>
+        </div>
       </section>
     </main>
   `
@@ -222,6 +490,52 @@ function queryElements(root: HTMLElement): AppElements {
       '[data-testid="velocity-overlay-toggle"]',
       HTMLButtonElement,
     ),
+    viscositySlider: getElement(
+      root,
+      '[data-testid="viscosity-slider"]',
+      HTMLInputElement,
+    ),
+    viscosityValue: getElement(
+      root,
+      '[data-testid="viscosity-value"]',
+      HTMLElement,
+    ),
+    diffusionSlider: getElement(
+      root,
+      '[data-testid="diffusion-slider"]',
+      HTMLInputElement,
+    ),
+    diffusionValue: getElement(
+      root,
+      '[data-testid="diffusion-value"]',
+      HTMLElement,
+    ),
+    decaySlider: getElement(
+      root,
+      '[data-testid="decay-slider"]',
+      HTMLInputElement,
+    ),
+    decayValue: getElement(root, '[data-testid="decay-value"]', HTMLElement),
+    resolutionSelect: getElement(
+      root,
+      '[data-testid="resolution-select"]',
+      HTMLSelectElement,
+    ),
+    themeSelect: getElement(
+      root,
+      '[data-testid="theme-select"]',
+      HTMLSelectElement,
+    ),
+    pauseButton: getElement(
+      root,
+      '[data-testid="pause-button"]',
+      HTMLButtonElement,
+    ),
+    resetButton: getElement(
+      root,
+      '[data-testid="reset-button"]',
+      HTMLButtonElement,
+    ),
   }
 }
 
@@ -239,4 +553,24 @@ function getElement<T extends Element>(
   }
 
   return element
+}
+
+function readSliderValue(input: HTMLInputElement): number {
+  const value = Number(input.value)
+
+  if (!Number.isFinite(value)) {
+    throw new Error(
+      `Expected slider "${input.dataset.testid ?? input.name}" to contain a finite number.`,
+    )
+  }
+
+  return value
+}
+
+function isThemeId(themeId: string): themeId is ThemeId {
+  return themeId === 'water-blue' || themeId === 'amber-heat'
+}
+
+function formatScientific(value: number): string {
+  return value.toExponential(2)
 }

@@ -11,6 +11,7 @@ describe('renderApp', () => {
     expect(root.querySelector('[data-testid="app-title"]')?.textContent).toBe(
       'Unit Test Title',
     )
+    expect(root.querySelector('[data-testid="control-panel"]')).toBeTruthy()
   })
 })
 
@@ -21,7 +22,7 @@ describe('mountApp', () => {
     HTMLCanvasElement.prototype.getContext = originalGetContext
   })
 
-  it('initializes the canvas shell and fps counter', () => {
+  it('initializes the canvas shell, fps counter, and control panel bindings', () => {
     const root = document.createElement('div')
     const setTransform = vi.fn()
     const clearRect = vi.fn()
@@ -99,6 +100,32 @@ describe('mountApp', () => {
       '0.0',
     )
     expect(
+      root.querySelector('[data-testid="viscosity-value"]')?.textContent,
+    ).toBe('2.00e-5')
+    expect(
+      root.querySelector('[data-testid="diffusion-value"]')?.textContent,
+    ).toBe('1.00e-4')
+    expect(root.querySelector('[data-testid="decay-value"]')?.textContent).toBe(
+      '0.992',
+    )
+    expect(
+      (
+        root.querySelector(
+          '[data-testid="resolution-select"]',
+        ) as HTMLSelectElement | null
+      )?.value,
+    ).toBe('96')
+    expect(
+      (
+        root.querySelector(
+          '[data-testid="theme-select"]',
+        ) as HTMLSelectElement | null
+      )?.value,
+    ).toBe('water-blue')
+    expect(
+      root.querySelector('[data-testid="pause-button"]')?.textContent,
+    ).toBe('Pause simulation')
+    expect(
       root
         .querySelector('[data-testid="velocity-overlay-toggle"]')
         ?.getAttribute('aria-pressed'),
@@ -123,6 +150,31 @@ describe('mountApp', () => {
     expect(createImageData).toHaveBeenCalled()
     expect(putImageData).toHaveBeenCalled()
     expect(stroke).not.toHaveBeenCalled()
+
+    const viscositySlider = root.querySelector(
+      '[data-testid="viscosity-slider"]',
+    ) as HTMLInputElement
+    viscositySlider.value = '0.0005'
+    viscositySlider.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(
+      root.querySelector('[data-testid="viscosity-value"]')?.textContent,
+    ).toBe('5.00e-4')
+
+    const themeSelect = root.querySelector(
+      '[data-testid="theme-select"]',
+    ) as HTMLSelectElement
+    themeSelect.value = 'amber-heat'
+    themeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+
+    expect(themeSelect.value).toBe('amber-heat')
+
+    const pauseButton = root.querySelector(
+      '[data-testid="pause-button"]',
+    ) as HTMLButtonElement
+    pauseButton.click()
+    expect(pauseButton.textContent).toBe('Resume simulation')
+    expect(pauseButton.getAttribute('aria-pressed')).toBe('true')
     ;(
       root.querySelector(
         '[data-testid="velocity-overlay-toggle"]',
@@ -138,6 +190,17 @@ describe('mountApp', () => {
       root.querySelector('[data-testid="velocity-overlay-toggle"]')
         ?.textContent,
     ).toBe('Hide velocity vectors')
+
+    const resolutionSelect = root.querySelector(
+      '[data-testid="resolution-select"]',
+    ) as HTMLSelectElement
+    resolutionSelect.value = '128'
+    resolutionSelect.dispatchEvent(new Event('change', { bubbles: true }))
+
+    expect(resolutionSelect.value).toBe('128')
+    ;(
+      root.querySelector('[data-testid="reset-button"]') as HTMLButtonElement
+    ).click()
 
     app.destroy()
     expect(removeEventListener).toHaveBeenCalledWith(
