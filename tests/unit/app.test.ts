@@ -115,6 +115,9 @@ describe('mountApp', () => {
         root.querySelector('[data-testid="average-fps"]')?.textContent,
       ).toBe('0.0')
       expect(
+        root.querySelector('[data-testid="brush-strength-value"]')?.textContent,
+      ).toBe('80')
+      expect(
         root.querySelector('[data-testid="viscosity-value"]')?.textContent,
       ).toBe('2.00e-5')
       expect(
@@ -182,10 +185,20 @@ describe('mountApp', () => {
       expect(stroke).not.toHaveBeenCalled()
 
       const viscositySlider = root.querySelector(
+        '[data-testid="brush-strength-slider"]',
+      ) as HTMLInputElement
+      viscositySlider.value = '96'
+      viscositySlider.dispatchEvent(new Event('input', { bubbles: true }))
+
+      expect(
+        root.querySelector('[data-testid="brush-strength-value"]')?.textContent,
+      ).toBe('96')
+
+      const actualViscositySlider = root.querySelector(
         '[data-testid="viscosity-slider"]',
       ) as HTMLInputElement
-      viscositySlider.value = '0.0005'
-      viscositySlider.dispatchEvent(new Event('input', { bubbles: true }))
+      actualViscositySlider.value = '0.0005'
+      actualViscositySlider.dispatchEvent(new Event('input', { bubbles: true }))
 
       expect(
         root.querySelector('[data-testid="viscosity-value"]')?.textContent,
