@@ -1,3 +1,7 @@
+import {
+  attachPointerController,
+  type PointerController,
+} from './input/pointerController'
 import { type AnimationLoopController, createAnimationLoop } from './loop'
 import { DensityRenderer } from './render/densityRenderer'
 import { type CanvasViewport, resizeCanvasToDisplaySize } from './resize'
@@ -32,8 +36,10 @@ interface AppElements {
 class App implements AppController {
   private readonly context: CanvasRenderingContext2D
   private readonly loop: AnimationLoopController
+  private readonly pointerController: PointerController
   private readonly renderer: DensityRenderer
   private readonly simulation: Simulation
+  private readonly simulationSize: number
   private viewport: CanvasViewport
 
   constructor(
@@ -48,11 +54,17 @@ class App implements AppController {
 
     this.context = context
     this.renderer = new DensityRenderer()
+    this.simulationSize = 96
     this.simulation = new Simulation({
-      size: 96,
+      size: this.simulationSize,
       diffusion: 0.0001,
       viscosity: 0.00002,
       iterations: 20,
+    })
+    this.pointerController = attachPointerController({
+      canvas: this.elements.canvas,
+      simulation: this.simulation,
+      gridSize: this.simulationSize,
     })
     this.viewport = resizeCanvasToDisplaySize(
       this.elements.canvas,
@@ -87,6 +99,7 @@ class App implements AppController {
 
   destroy(): void {
     this.windowObject.removeEventListener('resize', this.handleResize)
+    this.pointerController.destroy()
     this.loop.stop()
   }
 
@@ -106,8 +119,6 @@ class App implements AppController {
 
   private step(deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 1 / 30)
-    this.simulation.addDensity(48, 48, 12)
-    this.simulation.addVelocity(48, 48, 0.18, -0.12)
     this.simulation.step(dt)
   }
 
@@ -127,9 +138,9 @@ export function renderApp(root: HTMLElement, title: string): void {
         aria-label="Fluid simulation canvas"
       ></canvas>
       <section class="hud" data-testid="app-hud">
-        <p class="eyebrow">Density Renderer</p>
+        <p class="eyebrow">Interactive Density Renderer</p>
         <h1 data-testid="app-title">${title}</h1>
-        <p class="copy">Density values are upsampled into ImageData and rendered with a water-blue palette.</p>
+        <p class="copy">Drag across the canvas to inject velocity, and press to seed density into the water-blue field.</p>
         <div class="metrics">
           <span class="metric-label">FPS</span>
           <span class="metric-value" data-testid="fps-counter">0.0</span>
