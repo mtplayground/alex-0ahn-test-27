@@ -1,5 +1,7 @@
 import { type AnimationLoopController, createAnimationLoop } from './loop'
+import { DensityRenderer } from './render/densityRenderer'
 import { type CanvasViewport, resizeCanvasToDisplaySize } from './resize'
+import { Simulation } from './sim/FluidSimulation'
 
 interface AppWindow {
   addEventListener: Window['addEventListener']
@@ -30,6 +32,8 @@ interface AppElements {
 class App implements AppController {
   private readonly context: CanvasRenderingContext2D
   private readonly loop: AnimationLoopController
+  private readonly renderer: DensityRenderer
+  private readonly simulation: Simulation
   private viewport: CanvasViewport
 
   constructor(
@@ -43,6 +47,13 @@ class App implements AppController {
     }
 
     this.context = context
+    this.renderer = new DensityRenderer()
+    this.simulation = new Simulation({
+      size: 96,
+      diffusion: 0.0001,
+      viscosity: 0.00002,
+      iterations: 20,
+    })
     this.viewport = resizeCanvasToDisplaySize(
       this.elements.canvas,
       this.context,
@@ -60,8 +71,8 @@ class App implements AppController {
       cancelAnimationFrame: this.windowObject.cancelAnimationFrame.bind(
         this.windowObject,
       ),
-      onFrame: ({ fps }) => {
-        this.step()
+      onFrame: ({ deltaMs, fps }) => {
+        this.step(deltaMs)
         this.draw()
         this.elements.fps.textContent = fps.toFixed(1)
       },
@@ -93,21 +104,16 @@ class App implements AppController {
     this.draw()
   }
 
-  private step(): void {}
+  private step(deltaMs: number): void {
+    const dt = Math.min(deltaMs / 1000, 1 / 30)
+    this.simulation.addDensity(48, 48, 12)
+    this.simulation.addVelocity(48, 48, 0.18, -0.12)
+    this.simulation.step(dt)
+  }
 
   private draw(): void {
     this.context.clearRect(0, 0, this.viewport.width, this.viewport.height)
-    this.context.fillStyle = '#04111d'
-    this.context.fillRect(0, 0, this.viewport.width, this.viewport.height)
-
-    this.context.strokeStyle = 'rgba(136, 189, 255, 0.18)'
-    this.context.lineWidth = 1
-    this.context.strokeRect(
-      18.5,
-      18.5,
-      this.viewport.width - 37,
-      this.viewport.height - 37,
-    )
+    this.renderer.render(this.context, this.simulation.getDensity())
   }
 }
 
@@ -121,9 +127,9 @@ export function renderApp(root: HTMLElement, title: string): void {
         aria-label="Fluid simulation canvas"
       ></canvas>
       <section class="hud" data-testid="app-hud">
-        <p class="eyebrow">Canvas Loop Skeleton</p>
+        <p class="eyebrow">Density Renderer</p>
         <h1 data-testid="app-title">${title}</h1>
-        <p class="copy">Full-screen canvas, resize handling, and a requestAnimationFrame loop are active.</p>
+        <p class="copy">Density values are upsampled into ImageData and rendered with a water-blue palette.</p>
         <div class="metrics">
           <span class="metric-label">FPS</span>
           <span class="metric-value" data-testid="fps-counter">0.0</span>

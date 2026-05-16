@@ -25,22 +25,25 @@ describe('mountApp', () => {
     const root = document.createElement('div')
     const setTransform = vi.fn()
     const clearRect = vi.fn()
-    const fillRect = vi.fn()
-    const strokeRect = vi.fn()
+    const createImageData = vi.fn((width: number, height: number) => ({
+      data: new Uint8ClampedArray(width * height * 4),
+      width,
+      height,
+    }))
+    const putImageData = vi.fn()
 
-    HTMLCanvasElement.prototype.getContext = vi.fn(
-      () =>
-        ({
-          setTransform,
-          clearRect,
-          fillRect,
-          strokeRect,
-          fillStyle: '',
-          strokeStyle: '',
-          lineWidth: 1,
-          imageSmoothingEnabled: true,
-        }) as unknown as CanvasRenderingContext2D,
-    ) as unknown as HTMLCanvasElement['getContext']
+    HTMLCanvasElement.prototype.getContext = vi.fn(function thisGetContext(
+      this: HTMLCanvasElement,
+    ) {
+      return {
+        canvas: this,
+        setTransform,
+        clearRect,
+        createImageData,
+        putImageData,
+        imageSmoothingEnabled: true,
+      } as unknown as CanvasRenderingContext2D
+    }) as unknown as HTMLCanvasElement['getContext']
 
     let frameCallback: FrameRequestCallback | null = null
 
@@ -80,8 +83,8 @@ describe('mountApp', () => {
       '60.0',
     )
     expect(clearRect).toHaveBeenCalled()
-    expect(fillRect).toHaveBeenCalled()
-    expect(strokeRect).toHaveBeenCalled()
+    expect(createImageData).toHaveBeenCalled()
+    expect(putImageData).toHaveBeenCalled()
 
     app.destroy()
   })
