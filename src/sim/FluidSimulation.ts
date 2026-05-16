@@ -7,6 +7,7 @@ export interface SimulationOptions {
   size: number
   diffusion?: number
   viscosity?: number
+  decay?: number
   iterations?: number
   boundaryMode?: BoundaryMode
 }
@@ -14,6 +15,15 @@ export interface SimulationOptions {
 export interface VelocitySnapshot {
   x: Grid
   y: Grid
+}
+
+export interface SimulationConfigSnapshot {
+  size: number
+  diffusion: number
+  viscosity: number
+  decay: number
+  iterations: number
+  boundaryMode: BoundaryMode
 }
 
 export class Simulation {
@@ -27,8 +37,9 @@ export class Simulation {
   private readonly divergence: Grid
 
   private readonly size: number
-  private readonly diffusion: number
-  private readonly viscosity: number
+  private diffusion: number
+  private viscosity: number
+  private decay: number
   private readonly iterations: number
   private readonly boundaryMode: BoundaryMode
 
@@ -36,16 +47,19 @@ export class Simulation {
     size,
     diffusion = 0,
     viscosity = 0,
+    decay = 1,
     iterations = 20,
     boundaryMode = 'reflect',
   }: SimulationOptions) {
     validateIterations(iterations)
     validateNonNegative('diffusion', diffusion)
     validateNonNegative('viscosity', viscosity)
+    validateDecay(decay)
 
     this.size = size
     this.diffusion = diffusion
     this.viscosity = viscosity
+    this.decay = decay
     this.iterations = iterations
     this.boundaryMode = boundaryMode
 
@@ -160,6 +174,7 @@ export class Simulation {
       this.boundaryMode,
     )
 
+    this.applyDecay(dt)
     this.clearSources()
   }
 
@@ -174,6 +189,43 @@ export class Simulation {
     }
   }
 
+  getConfig(): SimulationConfigSnapshot {
+    return {
+      size: this.size,
+      diffusion: this.diffusion,
+      viscosity: this.viscosity,
+      decay: this.decay,
+      iterations: this.iterations,
+      boundaryMode: this.boundaryMode,
+    }
+  }
+
+  setDiffusion(diffusion: number): void {
+    validateNonNegative('diffusion', diffusion)
+    this.diffusion = diffusion
+  }
+
+  setViscosity(viscosity: number): void {
+    validateNonNegative('viscosity', viscosity)
+    this.viscosity = viscosity
+  }
+
+  setDecay(decay: number): void {
+    validateDecay(decay)
+    this.decay = decay
+  }
+
+  reset(): void {
+    this.density.fill(0)
+    this.densitySource.fill(0)
+    this.velocityX.fill(0)
+    this.velocityY.fill(0)
+    this.velocitySourceX.fill(0)
+    this.velocitySourceY.fill(0)
+    this.pressure.fill(0)
+    this.divergence.fill(0)
+  }
+
   private resolveInteriorCoordinate(x: number, y: number): [number, number] {
     return [clampIndex(x, this.size), clampIndex(y, this.size)]
   }
@@ -182,6 +234,22 @@ export class Simulation {
     this.densitySource.fill(0)
     this.velocitySourceX.fill(0)
     this.velocitySourceY.fill(0)
+  }
+
+  private applyDecay(dt: number): void {
+    if (this.decay >= 0.999999) {
+      return
+    }
+
+    const factor = Math.pow(this.decay, dt * 60)
+
+    for (let j = 1; j <= this.size; j += 1) {
+      for (let i = 1; i <= this.size; i += 1) {
+        this.density.set(i, j, this.density.get(i, j) * factor)
+        this.velocityX.set(i, j, this.velocityX.get(i, j) * factor)
+        this.velocityY.set(i, j, this.velocityY.get(i, j) * factor)
+      }
+    }
   }
 }
 
@@ -204,6 +272,12 @@ function validateIterations(iterations: number): void {
 function validateNonNegative(name: string, value: number): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new Error(`${name} must be a non-negative finite number.`)
+  }
+}
+
+function validateDecay(value: number): void {
+  if (!Number.isFinite(value) || value <= 0 || value > 1) {
+    throw new Error('decay must be a finite number between 0 and 1.')
   }
 }
 

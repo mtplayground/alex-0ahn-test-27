@@ -20,7 +20,7 @@ interface RenderContext {
 
 export class DensityRenderer {
   private imageData: ImageDataLike | null = null
-  private readonly theme: RenderTheme
+  private theme: RenderTheme
   private readonly densityScale: number
 
   constructor({
@@ -64,6 +64,10 @@ export class DensityRenderer {
     }
 
     context.putImageData(imageData, 0, 0)
+  }
+
+  setTheme(theme: RenderTheme): void {
+    this.theme = theme
   }
 
   private getImageData(
