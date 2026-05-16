@@ -189,6 +189,21 @@ export class Simulation {
     }
   }
 
+  restoreState(density: Grid, velocity: VelocitySnapshot): void {
+    this.density.assertSameShape(density)
+    this.velocityX.assertSameShape(velocity.x)
+    this.velocityY.assertSameShape(velocity.y)
+
+    this.density.copyFrom(density)
+    this.velocityX.copyFrom(velocity.x)
+    this.velocityY.copyFrom(velocity.y)
+    this.densitySource.fill(0)
+    this.velocitySourceX.fill(0)
+    this.velocitySourceY.fill(0)
+    this.pressure.fill(0)
+    this.divergence.fill(0)
+  }
+
   getConfig(): SimulationConfigSnapshot {
     return {
       size: this.size,
