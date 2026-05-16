@@ -15,6 +15,8 @@ import { Grid } from './sim/Grid'
 interface AppWindow {
   addEventListener: Window['addEventListener']
   removeEventListener: Window['removeEventListener']
+  setTimeout: Window['setTimeout']
+  clearTimeout: Window['clearTimeout']
   innerWidth: number
   innerHeight: number
   devicePixelRatio: number
@@ -38,6 +40,7 @@ interface AppElements {
   fps: HTMLElement
   averageFps: HTMLElement
   degradationNotice: HTMLElement
+  pointerHint: HTMLElement
   velocityToggle: HTMLButtonElement
   brushStrengthSlider: HTMLInputElement
   brushStrengthValue: HTMLElement
@@ -82,6 +85,7 @@ const INITIAL_PULSE_VELOCITY_X = 1.25
 const INITIAL_PULSE_VELOCITY_Y = -0.75
 const INITIAL_PULSE_STEP_DT = 1 / 180
 const INITIAL_PULSE_HOLD_MS = 64
+const POINTER_HINT_TIMEOUT_MS = 3_000
 
 class App implements AppController {
   private readonly context: CanvasRenderingContext2D
@@ -96,7 +100,9 @@ class App implements AppController {
   private showVelocityOverlay = false
   private averageFps = 0
   private degradationNotice = ''
+  private showPointerHint = true
   private stepDelayRemainingMs = 0
+  private pointerHintTimeoutId: number | null = null
   private viewport: CanvasViewport
 
   constructor(
@@ -152,6 +158,7 @@ class App implements AppController {
     this.windowObject.addEventListener('resize', this.handleResize)
     this.bindControls()
     this.primeSimulation()
+    this.schedulePointerHintFade()
     this.syncControls()
     this.draw()
     this.loop.start()
@@ -160,6 +167,7 @@ class App implements AppController {
   destroy(): void {
     this.windowObject.removeEventListener('resize', this.handleResize)
     this.unbindControls()
+    this.clearPointerHintTimeout()
     this.pointerController.destroy()
     this.loop.stop()
   }
@@ -208,6 +216,10 @@ class App implements AppController {
     this.elements.themeSelect.addEventListener('change', this.handleThemeChange)
     this.elements.pauseButton.addEventListener('click', this.handlePauseClick)
     this.elements.resetButton.addEventListener('click', this.handleResetClick)
+    this.elements.canvas.addEventListener(
+      'pointerdown',
+      this.handleCanvasPointerDown,
+    )
   }
 
   private unbindControls(): void {
@@ -246,6 +258,10 @@ class App implements AppController {
     this.elements.resetButton.removeEventListener(
       'click',
       this.handleResetClick,
+    )
+    this.elements.canvas.removeEventListener(
+      'pointerdown',
+      this.handleCanvasPointerDown,
     )
   }
 
@@ -340,11 +356,17 @@ class App implements AppController {
     this.syncControls()
   }
 
+  private readonly handleCanvasPointerDown = (): void => {
+    this.hidePointerHint()
+  }
+
   private readonly handleResetClick = (): void => {
     this.performanceMonitor.reset()
     this.clearDegradationNotice()
     this.rebuildSimulation({ preserveState: false })
     this.primeSimulation()
+    this.showPointerHint = false
+    this.clearPointerHintTimeout()
     this.syncControls()
     this.draw()
   }
@@ -447,6 +469,33 @@ class App implements AppController {
     this.stepDelayRemainingMs = INITIAL_PULSE_HOLD_MS
   }
 
+  private schedulePointerHintFade(): void {
+    this.clearPointerHintTimeout()
+    this.pointerHintTimeoutId = this.windowObject.setTimeout(() => {
+      this.pointerHintTimeoutId = null
+      this.hidePointerHint()
+    }, POINTER_HINT_TIMEOUT_MS)
+  }
+
+  private clearPointerHintTimeout(): void {
+    if (this.pointerHintTimeoutId === null) {
+      return
+    }
+
+    this.windowObject.clearTimeout(this.pointerHintTimeoutId)
+    this.pointerHintTimeoutId = null
+  }
+
+  private hidePointerHint(): void {
+    if (!this.showPointerHint) {
+      return
+    }
+
+    this.showPointerHint = false
+    this.clearPointerHintTimeout()
+    this.syncControls()
+  }
+
   private syncControls(): void {
     this.elements.velocityToggle.setAttribute(
       'aria-pressed',
@@ -483,6 +532,14 @@ class App implements AppController {
       : 'Pause simulation'
     this.elements.degradationNotice.textContent = this.degradationNotice
     this.elements.degradationNotice.hidden = this.degradationNotice.length === 0
+    this.elements.pointerHint.setAttribute(
+      'aria-hidden',
+      this.showPointerHint ? 'false' : 'true',
+    )
+    this.elements.pointerHint.classList.toggle(
+      'pointer-hint-hidden',
+      !this.showPointerHint,
+    )
   }
 
   private resolveSimulationSize(requestedSize: number): number {
@@ -513,6 +570,13 @@ export function renderApp(root: HTMLElement, title: string): void {
         data-testid="fluid-canvas"
         aria-label="Fluid simulation canvas"
       ></canvas>
+      <div
+        class="pointer-hint"
+        data-testid="pointer-hint"
+        aria-hidden="false"
+      >
+        Drag on the canvas to inject fluid
+      </div>
       <section class="hud" data-testid="app-hud">
         <p class="eyebrow">Interactive Density Renderer</p>
         <h1 data-testid="app-title">${title}</h1>
@@ -671,6 +735,7 @@ function queryElements(root: HTMLElement): AppElements {
       '[data-testid="degradation-notice"]',
       HTMLElement,
     ),
+    pointerHint: getElement(root, '[data-testid="pointer-hint"]', HTMLElement),
     velocityToggle: getElement(
       root,
       '[data-testid="velocity-overlay-toggle"]',

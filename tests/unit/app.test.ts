@@ -50,6 +50,12 @@ describe('mountApp', () => {
         },
       )
       const removeEventListener = vi.fn()
+      let timeoutId = 0
+      const setTimeout = vi.fn(() => {
+        timeoutId += 1
+        return timeoutId
+      })
+      const clearTimeout = vi.fn()
       const setPointerCapture = vi.fn()
       const releasePointerCapture = vi.fn()
 
@@ -92,6 +98,8 @@ describe('mountApp', () => {
         innerWidth: 1280,
         innerHeight: 720,
         devicePixelRatio: 2,
+        setTimeout,
+        clearTimeout,
         requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
           frameCallback = callback
           return 1
@@ -114,6 +122,14 @@ describe('mountApp', () => {
       expect(
         root.querySelector('[data-testid="average-fps"]')?.textContent,
       ).toBe('0.0')
+      expect(
+        root.querySelector('[data-testid="pointer-hint"]')?.textContent,
+      ).toContain('Drag on the canvas to inject fluid')
+      expect(
+        root
+          .querySelector('[data-testid="pointer-hint"]')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('false')
       expect(
         root.querySelector('[data-testid="brush-strength-value"]')?.textContent,
       ).toBe('80')
@@ -157,6 +173,7 @@ describe('mountApp', () => {
       )
       expect(setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0)
       expect(putImageData).toHaveBeenCalled()
+      expect(setTimeout).toHaveBeenCalledTimes(1)
 
       const initialFrame = getImageStats(
         putImageData.mock.calls[putImageData.mock.calls.length - 1]?.[0],
@@ -236,6 +253,21 @@ describe('mountApp', () => {
         root.querySelector('[data-testid="velocity-overlay-toggle"]')
           ?.textContent,
       ).toBe('Hide velocity vectors')
+      const pointerDownEvent = new MouseEvent('pointerdown', {
+        bubbles: true,
+        clientX: 160,
+        clientY: 160,
+      })
+      ;(
+        root.querySelector('[data-testid="fluid-canvas"]') as HTMLCanvasElement
+      ).dispatchEvent(pointerDownEvent)
+
+      expect(
+        root
+          .querySelector('[data-testid="pointer-hint"]')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('true')
+      expect(clearTimeout).toHaveBeenCalledWith(1)
 
       const resolutionSelect = root.querySelector(
         '[data-testid="resolution-select"]',
@@ -297,6 +329,11 @@ describe('mountApp', () => {
       expect(Math.abs(resetFrame.lumaSum - resetBaseline.lumaSum)).toBeLessThan(
         5_000_000,
       )
+      expect(
+        root
+          .querySelector('[data-testid="pointer-hint"]')
+          ?.getAttribute('aria-hidden'),
+      ).toBe('true')
 
       app.destroy()
       expect(removeEventListener).toHaveBeenCalledWith(
@@ -305,6 +342,70 @@ describe('mountApp', () => {
       )
     },
   )
+
+  it('hides the pointer hint after the idle timeout', () => {
+    const root = document.createElement('div')
+    let timeoutHandler: (() => void) | null = null
+    let timeoutId = 0
+
+    HTMLCanvasElement.prototype.getContext = vi.fn(function thisGetContext(
+      this: HTMLCanvasElement,
+    ) {
+      return {
+        canvas: this,
+        setTransform: vi.fn(),
+        clearRect: vi.fn(),
+        createImageData: vi.fn((width: number, height: number) => ({
+          data: new Uint8ClampedArray(width * height * 4),
+          width,
+          height,
+        })),
+        putImageData: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        stroke: vi.fn(),
+        imageSmoothingEnabled: true,
+      } as unknown as CanvasRenderingContext2D
+    }) as unknown as HTMLCanvasElement['getContext']
+
+    const app = mountApp({
+      root,
+      title: 'Unit Test Title',
+      windowObject: {
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        innerWidth: 1280,
+        innerHeight: 720,
+        devicePixelRatio: 1,
+        setTimeout: vi.fn((handler: () => void) => {
+          timeoutHandler = handler
+          timeoutId += 1
+          return timeoutId
+        }),
+        clearTimeout: vi.fn(),
+        requestAnimationFrame: vi.fn(() => 1),
+        cancelAnimationFrame: vi.fn(),
+      },
+    })
+
+    if (timeoutHandler === null) {
+      throw new Error('Expected pointer hint timeout to be registered.')
+    }
+
+    const runTimeout: () => void = timeoutHandler
+    runTimeout()
+
+    expect(
+      root
+        .querySelector('[data-testid="pointer-hint"]')
+        ?.getAttribute('aria-hidden'),
+    ).toBe('true')
+
+    app.destroy()
+  })
 })
 
 function getImageStats(imageData: unknown): {
