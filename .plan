@@ -1,106 +1,116 @@
 # Architecture Plan
 
-## Target shape
+## Current project shape
 
-Build a Vite + TypeScript browser app that renders a 2D stable-fluids simulation on a full-screen Canvas, with a small DOM-based control panel and automated unit/e2e coverage.
+This repository already contains a shipped Vite + TypeScript browser app for a 2D fluid simulation. The current stack is:
 
-## Proposed file organization
+- Canvas-based rendering and RAF app shell in `src/app.ts`
+- Simulation core in `src/sim/`
+- Rendering helpers in `src/render/`
+- Pointer input mapping in `src/input/`
+- Performance fallback logic in `src/performance/`
+- Unit and Playwright coverage in `tests/unit/` and `tests/e2e/`
 
-Issue 1 should establish this structure:
+The new issue batch should build on that existing structure rather than introduce new top-level subsystems.
+
+## Relevant file organization
 
 ```text
-/
-  index.html
-  package.json
-  tsconfig.json
-  vite.config.ts
-  vitest.config.ts
-  playwright.config.ts
-  src/
-    main.ts
-    app/
-      App.ts
-      loop.ts
-      resize.ts
-    sim/
-      constants.ts
-      types.ts
-      Grid.ts
-      boundary.ts
-      steps.ts
-      project.ts
-      FluidSimulation.ts
-    render/
-      palette.ts
-      densityRenderer.ts
-      vectorOverlay.ts
+src/
+  app.ts
+  loop.ts
+  main.ts
+  resize.ts
+  input/
+    coordinateMap.ts
+    pointerController.ts
+  performance/
+    PerformanceMonitor.ts
+  render/
+    densityRenderer.ts
+    palette.ts
+    velocityOverlayRenderer.ts
+  sim/
+    boundary.ts
+    FluidSimulation.ts
+    Grid.ts
+    project.ts
+    steps.ts
+    types.ts
+tests/
+  e2e/
+    smoke.spec.ts
+  unit/
+    app.test.ts
     input/
-      pointerController.ts
-      coordinateMap.ts
-    ui/
-      controlPanel.ts
-      bindings.ts
-    perf/
-      fpsMonitor.ts
-      autoQuality.ts
-    shared/
-      math.ts
-      clamp.ts
-      config.ts
-  tests/
-    unit/
-      sim/
-    e2e/
-  public/
+    performance/
+    render/
+    sim/
 ```
 
-## Shared types and contracts
+## Shared types and state surfaces
 
-- `SimulationConfig`: grid size, viscosity, diffusion, decay, solver iterations, theme, debug flags.
-- `GridField`: wrapper around `Float32Array` with `size`, `stride`, `index(i, j)` and `fill/clone/swap` helpers.
-- `VelocityField`: pair of `GridField`s for `u` and `v`.
-- `PointerInjection`: mapped grid coordinate plus density and velocity impulse.
-- `RenderTheme`: palette mapping density scalar to RGBA.
-- `QualityLevel`: named resolution preset plus fallback order.
+- `FluidSimulation` is the top-level state holder and already exposes density/velocity injection, stepping, config mutation, reset, and state snapshot/restore.
+- Renderer state is split between:
+  - density-to-`ImageData` rendering in `src/render/densityRenderer.ts`
+  - optional velocity overlay rendering in `src/render/velocityOverlayRenderer.ts`
+- App/UI state is centralized in `src/app.ts`, which owns:
+  - the canvas and HUD DOM
+  - control panel bindings
+  - resize handling
+  - pause/reset/theme/resolution toggles
+  - performance degradation notices
 
-Keep the simulation core independent from DOM and Canvas code. `FluidSimulation` should be pure TypeScript state plus numeric methods; the app layer owns RAF timing, canvas size, input binding, and UI.
+For this batch, new defaults should stay as shared exported constants rather than being hardcoded inside `app.ts`, the pointer controller, or the renderer.
 
 ## Issue dependency map
 
-1. Issue 1 sets up Vite/TS and repo-level files.
-2. Issue 2 hardens linting and strict typing on top of Issue 1.
-3. Issue 3 adds Vitest/Playwright after the app scaffold exists.
-4. Issue 4 creates the browser shell: canvas, RAF loop, FPS display.
-5. Issue 5 defines the grid representation and boundary helpers used by all solver code.
-6. Issue 6 adds `addSource`, `diffuse`, and `advect` on top of Issue 5.
-7. Issue 7 adds `project`, also on top of Issue 5 and sharing solver utilities with Issue 6.
-8. Issue 8 assembles the full `FluidSimulation.step(dt)` pipeline from Issues 5-7.
-9. Issue 9 depends on Issue 8 for density data and Issue 4 for canvas drawing.
-10. Issue 10 depends on Issue 8 and Issue 4 to translate pointer input into simulation impulses.
-11. Issue 11 depends on Issue 8 and Issue 4, optionally reusing the renderer package for overlay drawing.
-12. Issue 12 depends on Issue 8 and the app shell to bind controls to config/state.
-13. Issue 13 depends on Issue 8 and Issue 4 to rebuild simulation buffers and canvas sizing safely.
-14. Issue 14 depends on Issue 13 and Issue 12 so quality changes can be surfaced and applied dynamically.
-15. Issue 15 depends on the user-visible path being complete enough to exercise canvas, interaction, controls, and reset behavior.
-16. Issue 16 closes with docs, build validation, preview checks, and artifact review.
+1. Issue `#33` adds automatic initial density and velocity injection at startup and on reset.
+   - Depends on existing `FluidSimulation.addDensity`, `addVelocity`, and reset flow in `src/app.ts`.
+   - Likely touches the app boot/reset orchestration only.
+
+2. Issue `#34` increases default visibility and centralizes defaults.
+   - Depends on `#33` because the startup pulse and pointer brush should share the same “visible by default” configuration story.
+   - Should introduce a small shared config module, likely `src/config/defaults.ts`, consumed by:
+     - `pointerController`
+     - density renderer
+     - control panel brush-strength binding
+
+3. Issue `#35` adds the in-canvas onboarding hint.
+   - Depends on existing app shell and pointer lifecycle.
+   - Should stay in DOM/CSS/app state, not inside the simulation core.
+   - Needs a clean “first meaningful interaction” signal from the pointer path.
+
+4. Issue `#36` adds E2E verification for startup-visible fluid and hint dismissal.
+   - Depends on `#33`, `#34`, and `#35`.
+   - Should extend the Playwright suite with deterministic assertions on:
+     - visible initial fluid without user interaction
+     - hint visible on load
+     - hint hidden after first pointerdown
 
 ## Key design decisions
 
-- Use a classic stable-fluids layout with ghost cells: allocate `(N + 2) * (N + 2)` arrays to simplify boundary handling and Poisson solves.
-- Keep all simulation arrays preallocated and swapped in place to avoid per-frame GC churn.
-- Centralize grid indexing and boundary application in one module; numeric bugs will otherwise scatter quickly.
-- Use fixed solver iteration counts from config, defaulting to 20 for diffusion/projection, so correctness and performance are tunable from one place.
-- Use a deterministic `step(dt)` API with optional `dt` clamping in the app layer to prevent huge frame jumps after tab inactivity.
-- Render density through an offscreen `ImageData` buffer sized to the visible canvas, with nearest-neighbor or simple bilinear sampling from grid cells.
-- Prefer DOM controls over canvas-drawn widgets so Playwright can target stable selectors.
-- Treat resolution as simulation-grid resolution, not just CSS pixel ratio. Canvas display size and simulation quality should be separate concerns.
-- Expose lightweight state snapshots for tests rather than leaking mutable internal arrays directly where avoidable.
-- Add `data-testid` hooks early in the app shell and control panel to make e2e tests stable.
+- Keep startup injection in the app orchestration layer, not in `FluidSimulation.step()`.
+  Reason: it is a UX/bootstrap concern, not a permanent physical rule of the solver.
 
-## Suggested implementation order inside later issues
+- Represent initial injection as a reusable helper.
+  Reason: startup and reset should trigger exactly the same seeded state.
 
-- Finish repo/tooling baseline first: Issues 1-3.
-- Build the app shell and numeric core in parallel-friendly layers: Issues 4-8.
-- Add rendering and interaction next: Issues 9-10.
-- Layer optional debug/UI/quality features after the main loop works: Issues 11-14.
-- Finish with end-to-end verification and docs: Issues 15-16.
+- Centralize user-facing default constants in one module.
+  Reason: pointer brush strength, renderer scale, and control panel defaults should not drift.
+
+- Keep the onboarding hint as DOM overlay state with CSS transitions.
+  Reason: easier styling, easier accessibility, and stable Playwright selectors.
+
+- Use “first valid pointer interaction” as the hide trigger.
+  Reason: it aligns with the actual injection model and avoids disappearing on unrelated movement noise.
+
+- Preserve deterministic E2E checks by sampling canvas pixels after a short wait instead of relying only on text/UI state.
+  Reason: the main user-visible regression risk is “simulation loads but nothing is visible.”
+
+## Suggested implementation order
+
+1. Add reusable startup/reset seeding helper (`#33`).
+2. Extract and wire shared default config plus brush-strength control (`#34`).
+3. Add the instructional overlay and fade-out behavior (`#35`).
+4. Extend Playwright coverage for initial visible fluid and hint lifecycle (`#36`).
