@@ -2,6 +2,43 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 test.describe('critical canvas path', () => {
+  test('shows visible fluid in the center on first load without interaction', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    await page.waitForTimeout(500)
+
+    const stats = await readCanvasRegionStats(page, {
+      xStart: 0.35,
+      xEnd: 0.65,
+      yStart: 0.35,
+      yEnd: 0.65,
+    })
+
+    expect(stats.averageLuma).toBeGreaterThan(100)
+  })
+
+  test('shows the pointer hint on load and hides it after pointerdown', async ({
+    page,
+  }) => {
+    await page.goto('/')
+
+    const hint = page.getByTestId('pointer-hint')
+    await expect(hint).toBeVisible()
+    await expect(hint).toContainText('Drag on the canvas to inject fluid')
+
+    const canvas = page.getByTestId('fluid-canvas')
+    await canvas.dispatchEvent('pointerdown', {
+      clientX: 180,
+      clientY: 180,
+      pointerId: 1,
+    })
+
+    await expect(hint).toHaveAttribute('aria-hidden', 'true', {
+      timeout: 1_000,
+    })
+  })
+
   test('shows the canvas and changes pixels after a drag interaction', async ({
     page,
   }) => {
@@ -158,4 +195,63 @@ async function readCanvasStats(
 
     return { lumaSum, changedPixels }
   })
+}
+
+async function readCanvasRegionStats(
+  page: Page,
+  {
+    xStart,
+    xEnd,
+    yStart,
+    yEnd,
+  }: {
+    xStart: number
+    xEnd: number
+    yStart: number
+    yEnd: number
+  },
+): Promise<{ averageLuma: number; changedPixels: number }> {
+  return page.getByTestId('fluid-canvas').evaluate(
+    (element, region) => {
+      const canvas = element as HTMLCanvasElement
+      const context = canvas.getContext('2d')
+
+      if (!context) {
+        throw new Error('Canvas 2D context is unavailable during the E2E test.')
+      }
+
+      const width = canvas.width
+      const height = canvas.height
+      const x0 = Math.floor(width * region.xStart)
+      const x1 = Math.floor(width * region.xEnd)
+      const y0 = Math.floor(height * region.yStart)
+      const y1 = Math.floor(height * region.yEnd)
+      const sampleWidth = Math.max(1, x1 - x0)
+      const sampleHeight = Math.max(1, y1 - y0)
+      const { data } = context.getImageData(x0, y0, sampleWidth, sampleHeight)
+      let lumaSum = 0
+      let changedPixels = 0
+
+      for (let index = 0; index < data.length; index += 4) {
+        const red = data[index] ?? 0
+        const green = data[index + 1] ?? 0
+        const blue = data[index + 2] ?? 0
+        const alpha = data[index + 3] ?? 0
+        const luma = red + green + blue + alpha
+        lumaSum += luma
+
+        if (luma > 160) {
+          changedPixels += 1
+        }
+      }
+
+      const pixelCount = Math.max(1, data.length / 4)
+
+      return {
+        averageLuma: lumaSum / pixelCount,
+        changedPixels,
+      }
+    },
+    { xStart, xEnd, yStart, yEnd },
+  )
 }
