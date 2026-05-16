@@ -1,3 +1,4 @@
+import { DEFAULT_DENSITY_RENDER_SCALE } from '../config/defaults'
 import { Grid } from '../sim/Grid'
 import { type RenderTheme, waterBlueTheme } from './palette'
 
@@ -25,7 +26,7 @@ export class DensityRenderer {
 
   constructor({
     theme = waterBlueTheme,
-    densityScale = 0.1,
+    densityScale = DEFAULT_DENSITY_RENDER_SCALE,
   }: DensityRendererOptions = {}) {
     if (!Number.isFinite(densityScale) || densityScale <= 0) {
       throw new Error('densityScale must be a positive finite number.')

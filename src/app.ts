@@ -1,3 +1,4 @@
+import { DEFAULT_POINTER_DENSITY_AMOUNT } from './config/defaults'
 import {
   attachPointerController,
   type PointerController,
@@ -38,6 +39,8 @@ interface AppElements {
   averageFps: HTMLElement
   degradationNotice: HTMLElement
   velocityToggle: HTMLButtonElement
+  brushStrengthSlider: HTMLInputElement
+  brushStrengthValue: HTMLElement
   viscositySlider: HTMLInputElement
   viscosityValue: HTMLElement
   diffusionSlider: HTMLInputElement
@@ -52,6 +55,7 @@ interface AppElements {
 }
 
 interface RuntimeControls {
+  brushStrength: number
   size: number
   viscosity: number
   diffusion: number
@@ -60,6 +64,7 @@ interface RuntimeControls {
 }
 
 const DEFAULT_CONTROLS: RuntimeControls = {
+  brushStrength: DEFAULT_POINTER_DENSITY_AMOUNT,
   size: 96,
   viscosity: 0.00002,
   diffusion: 0.0001,
@@ -174,6 +179,7 @@ class App implements AppController {
       canvas: this.elements.canvas,
       simulation: this.simulation,
       gridSize: this.simulation.getConfig().size,
+      getDensityAmount: () => this.controls.brushStrength,
     })
   }
 
@@ -181,6 +187,10 @@ class App implements AppController {
     this.elements.velocityToggle.addEventListener(
       'click',
       this.handleToggleClick,
+    )
+    this.elements.brushStrengthSlider.addEventListener(
+      'input',
+      this.handleBrushStrengthInput,
     )
     this.elements.viscositySlider.addEventListener(
       'input',
@@ -204,6 +214,10 @@ class App implements AppController {
     this.elements.velocityToggle.removeEventListener(
       'click',
       this.handleToggleClick,
+    )
+    this.elements.brushStrengthSlider.removeEventListener(
+      'input',
+      this.handleBrushStrengthInput,
     )
     this.elements.viscositySlider.removeEventListener(
       'input',
@@ -255,6 +269,14 @@ class App implements AppController {
     this.showVelocityOverlay = !this.showVelocityOverlay
     this.syncControls()
     this.draw()
+  }
+
+  private readonly handleBrushStrengthInput = (): void => {
+    this.controls.brushStrength = readSliderValue(
+      this.elements.brushStrengthSlider,
+    )
+    this.clearDegradationNotice()
+    this.syncControls()
   }
 
   private readonly handleViscosityInput = (): void => {
@@ -433,6 +455,10 @@ class App implements AppController {
     this.elements.velocityToggle.textContent = this.showVelocityOverlay
       ? 'Hide velocity vectors'
       : 'Show velocity vectors'
+    this.elements.brushStrengthSlider.value =
+      this.controls.brushStrength.toString()
+    this.elements.brushStrengthValue.textContent =
+      this.controls.brushStrength.toFixed(0)
     this.elements.viscositySlider.value = this.controls.viscosity.toString()
     this.elements.viscosityValue.textContent = formatScientific(
       this.controls.viscosity,
@@ -517,6 +543,20 @@ export function renderApp(root: HTMLElement, title: string): void {
             Show velocity vectors
           </button>
         </div>
+        <label class="control-field">
+          <span class="control-topline">
+            <span>Brush strength</span>
+            <output data-testid="brush-strength-value">0</output>
+          </span>
+          <input
+            data-testid="brush-strength-slider"
+            type="range"
+            min="24"
+            max="120"
+            step="1"
+            value="${DEFAULT_CONTROLS.brushStrength.toString()}"
+          />
+        </label>
         <label class="control-field">
           <span class="control-topline">
             <span>Viscosity</span>
@@ -635,6 +675,16 @@ function queryElements(root: HTMLElement): AppElements {
       root,
       '[data-testid="velocity-overlay-toggle"]',
       HTMLButtonElement,
+    ),
+    brushStrengthSlider: getElement(
+      root,
+      '[data-testid="brush-strength-slider"]',
+      HTMLInputElement,
+    ),
+    brushStrengthValue: getElement(
+      root,
+      '[data-testid="brush-strength-value"]',
+      HTMLElement,
     ),
     viscositySlider: getElement(
       root,

@@ -40,4 +40,44 @@ describe('createPointerControllerHarness', () => {
     expect(addDensity).toHaveBeenCalledWith(3, 6, 30)
     expect(addVelocity).toHaveBeenCalledWith(8, 8, 2.5, 1)
   })
+
+  it('reads brush strength from the live getter when provided', () => {
+    const addDensity = vi.fn()
+    const canvas = document.createElement('canvas')
+    let brushStrength = 80
+
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        width: 200,
+        height: 100,
+      }) as DOMRect
+
+    const controller = createPointerControllerHarness({
+      canvas,
+      simulation: { addDensity, addVelocity: vi.fn() },
+      gridSize: 10,
+      getDensityAmount: () => brushStrength,
+    })
+
+    controller.pointerDown({
+      pointerId: 1,
+      clientX: 20,
+      clientY: 20,
+      preventDefault: vi.fn(),
+    })
+
+    brushStrength = 96
+
+    controller.pointerDown({
+      pointerId: 2,
+      clientX: 40,
+      clientY: 40,
+      preventDefault: vi.fn(),
+    })
+
+    expect(addDensity).toHaveBeenNthCalledWith(1, 2, 3, 80)
+    expect(addDensity).toHaveBeenNthCalledWith(2, 3, 5, 96)
+  })
 })

@@ -1,3 +1,4 @@
+import { DEFAULT_POINTER_DENSITY_AMOUNT } from '../config/defaults'
 import { type GridCoordinate, mapPointerToGrid } from './coordinateMap'
 
 export interface PointerDrivenSimulation {
@@ -10,6 +11,7 @@ interface PointerControllerOptions {
   simulation: PointerDrivenSimulation
   gridSize: number
   densityAmount?: number
+  getDensityAmount?: () => number
   velocityScale?: number
 }
 
@@ -33,10 +35,14 @@ export function attachPointerController({
   canvas,
   simulation,
   gridSize,
-  densityAmount = 24,
+  densityAmount = DEFAULT_POINTER_DENSITY_AMOUNT,
+  getDensityAmount,
   velocityScale = 0.12,
 }: PointerControllerOptions): PointerController {
   let activePointer: PointerState | null = null
+
+  const resolveDensityAmount = (): number =>
+    getDensityAmount?.() ?? densityAmount
 
   const handlePointerDown = (event: PointerEvent): void => {
     const position = resolveGridCoordinate(canvas, event, gridSize)
@@ -45,7 +51,7 @@ export function attachPointerController({
       position,
     }
 
-    simulation.addDensity(position.x, position.y, densityAmount)
+    simulation.addDensity(position.x, position.y, resolveDensityAmount())
     event.preventDefault()
     canvas.setPointerCapture?.(event.pointerId)
   }
@@ -105,7 +111,8 @@ export function createPointerControllerHarness({
   canvas,
   simulation,
   gridSize,
-  densityAmount = 24,
+  densityAmount = DEFAULT_POINTER_DENSITY_AMOUNT,
+  getDensityAmount,
   velocityScale = 0.12,
 }: PointerControllerOptions): {
   pointerDown(event: PointerLikeEvent): void
@@ -113,6 +120,8 @@ export function createPointerControllerHarness({
   pointerEnd(event: PointerLikeEvent): void
 } {
   let activePointer: PointerState | null = null
+  const resolveDensityAmount = (): number =>
+    getDensityAmount?.() ?? densityAmount
 
   return {
     pointerDown(event) {
@@ -121,7 +130,7 @@ export function createPointerControllerHarness({
         pointerId: event.pointerId,
         position,
       }
-      simulation.addDensity(position.x, position.y, densityAmount)
+      simulation.addDensity(position.x, position.y, resolveDensityAmount())
       event.preventDefault()
     },
     pointerMove(event) {
