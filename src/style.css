@@ -122,6 +122,11 @@ h1 {
   background: rgba(120, 180, 255, 0.12);
 }
 
+.secondary-metric {
+  margin-left: 8px;
+  background: rgba(243, 167, 99, 0.14);
+}
+
 .metric-label {
   color: #8fbaf3;
   font-size: 0.78rem;
@@ -134,6 +139,12 @@ h1 {
   color: #ffffff;
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
+}
+
+.degradation-notice {
+  margin: 14px 0 0;
+  color: #ffd7b1;
+  font-size: 0.9rem;
 }
 
 .control-field {
