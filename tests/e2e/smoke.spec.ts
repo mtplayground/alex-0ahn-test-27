@@ -4,9 +4,11 @@ test('loads the landing page shell', async ({ page }) => {
   await page.goto('/')
 
   await expect(page.getByTestId('app-title')).toHaveText('alex-0ahn-test-27')
+  await expect(page.getByTestId('fluid-canvas')).toBeVisible()
+  await expect(page.getByTestId('fps-counter')).not.toHaveText('0.0')
   await expect(
     page.getByText(
-      'Project scaffold is ready for the fluid simulation features.',
+      'Full-screen canvas, resize handling, and a requestAnimationFrame loop are active.',
     ),
   ).toBeVisible()
 })

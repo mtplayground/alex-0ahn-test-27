@@ -6,7 +6,28 @@
     <title>alex-0ahn-test-27</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <main class="shell">
+        <canvas
+          class="canvas"
+          id="fluid-canvas"
+          data-testid="fluid-canvas"
+          aria-label="Fluid simulation canvas"
+        ></canvas>
+        <section class="hud" data-testid="app-hud">
+          <p class="eyebrow">Canvas Loop Skeleton</p>
+          <h1 data-testid="app-title">alex-0ahn-test-27</h1>
+          <p class="copy">
+            Full-screen canvas, resize handling, and a requestAnimationFrame
+            loop are active.
+          </p>
+          <div class="metrics">
+            <span class="metric-label">FPS</span>
+            <span class="metric-value" data-testid="fps-counter">0.0</span>
+          </div>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

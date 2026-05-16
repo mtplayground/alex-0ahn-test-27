@@ -1,6 +1,6 @@
 import './style.css'
 
-import { renderApp } from './app'
+import { mountApp } from './app'
 
 const app = document.querySelector<HTMLDivElement>('#app')
 
@@ -12,4 +12,4 @@ const title = import.meta.env.VITE_APP_TITLE || 'alex-0ahn-test-27'
 
 document.title = title
 
-renderApp(app, title)
+mountApp({ root: app, title })
