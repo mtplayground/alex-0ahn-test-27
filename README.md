@@ -12,6 +12,8 @@ Vite + TypeScript project scaffold for the fluid playground application.
 ```bash
 pnpm install
 pnpm dev
+pnpm lint
+pnpm format
 ```
 
 The Vite dev server is configured to listen on `0.0.0.0:8080`.
