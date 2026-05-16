@@ -3,6 +3,7 @@ import {
   type PointerController,
 } from './input/pointerController'
 import { type AnimationLoopController, createAnimationLoop } from './loop'
+import { PerformanceMonitor } from './performance/PerformanceMonitor'
 import { DensityRenderer } from './render/densityRenderer'
 import { getRenderTheme, type ThemeId } from './render/palette'
 import { VelocityOverlayRenderer } from './render/velocityOverlayRenderer'
@@ -34,6 +35,8 @@ interface AppElements {
   canvas: HTMLCanvasElement
   title: HTMLElement
   fps: HTMLElement
+  averageFps: HTMLElement
+  degradationNotice: HTMLElement
   velocityToggle: HTMLButtonElement
   viscositySlider: HTMLInputElement
   viscosityValue: HTMLElement
@@ -74,11 +77,14 @@ class App implements AppController {
   private readonly loop: AnimationLoopController
   private readonly renderer: DensityRenderer
   private readonly velocityOverlayRenderer: VelocityOverlayRenderer
+  private readonly performanceMonitor: PerformanceMonitor
   private simulation: Simulation
   private pointerController: PointerController
   private controls: RuntimeControls
   private paused = false
   private showVelocityOverlay = false
+  private averageFps = 0
+  private degradationNotice = ''
   private viewport: CanvasViewport
 
   constructor(
@@ -97,6 +103,10 @@ class App implements AppController {
       theme: getRenderTheme(this.controls.themeId),
     })
     this.velocityOverlayRenderer = new VelocityOverlayRenderer()
+    this.performanceMonitor = new PerformanceMonitor({
+      sampleSize: 6,
+      requiredLowSamples: 2,
+    })
     this.simulation = this.createSimulation()
     this.pointerController = this.attachPointerController()
     this.viewport = resizeCanvasToDisplaySize(
@@ -117,9 +127,11 @@ class App implements AppController {
         this.windowObject,
       ),
       onFrame: ({ deltaMs, fps }) => {
+        this.trackPerformance(fps)
         this.step(deltaMs)
         this.draw()
         this.elements.fps.textContent = fps.toFixed(1)
+        this.elements.averageFps.textContent = this.averageFps.toFixed(1)
       },
     })
   }
@@ -241,6 +253,7 @@ class App implements AppController {
     const viscosity = readSliderValue(this.elements.viscositySlider)
     this.controls.viscosity = viscosity
     this.simulation.setViscosity(viscosity)
+    this.clearDegradationNotice()
     this.syncControls()
   }
 
@@ -248,6 +261,7 @@ class App implements AppController {
     const diffusion = readSliderValue(this.elements.diffusionSlider)
     this.controls.diffusion = diffusion
     this.simulation.setDiffusion(diffusion)
+    this.clearDegradationNotice()
     this.syncControls()
   }
 
@@ -255,6 +269,7 @@ class App implements AppController {
     const decay = readSliderValue(this.elements.decaySlider)
     this.controls.decay = decay
     this.simulation.setDecay(decay)
+    this.clearDegradationNotice()
     this.syncControls()
   }
 
@@ -268,6 +283,8 @@ class App implements AppController {
     }
 
     this.controls.size = size
+    this.performanceMonitor.reset()
+    this.clearDegradationNotice()
     this.rebuildSimulation({ preserveState: true })
     this.syncControls()
     this.draw()
@@ -282,16 +299,20 @@ class App implements AppController {
 
     this.controls.themeId = themeId
     this.renderer.setTheme(getRenderTheme(themeId))
+    this.clearDegradationNotice()
     this.syncControls()
     this.draw()
   }
 
   private readonly handlePauseClick = (): void => {
     this.paused = !this.paused
+    this.performanceMonitor.reset()
     this.syncControls()
   }
 
   private readonly handleResetClick = (): void => {
+    this.performanceMonitor.reset()
+    this.clearDegradationNotice()
     this.rebuildSimulation({ preserveState: false })
     this.syncControls()
     this.draw()
@@ -331,6 +352,41 @@ class App implements AppController {
 
     const dt = Math.min(deltaMs / 1000, 1 / 30)
     this.simulation.step(dt)
+  }
+
+  private trackPerformance(fps: number): void {
+    const snapshot = this.performanceMonitor.recordFrame(fps)
+    this.averageFps = snapshot.averageFps
+
+    if (!this.paused && snapshot.shouldDowngrade) {
+      this.autoDowngradeResolution()
+    }
+  }
+
+  private autoDowngradeResolution(): void {
+    const currentIndex = RESOLUTION_OPTIONS.indexOf(
+      this.controls.size as (typeof RESOLUTION_OPTIONS)[number],
+    )
+
+    if (currentIndex <= 0) {
+      this.performanceMonitor.reset()
+      return
+    }
+
+    const nextSize = RESOLUTION_OPTIONS[currentIndex - 1]
+
+    if (nextSize === undefined) {
+      this.performanceMonitor.reset()
+      return
+    }
+
+    const previousRequestedSize = this.controls.size
+    this.controls.size = nextSize
+    this.performanceMonitor.reset()
+    this.degradationNotice = `Performance fallback: ${previousRequestedSize.toString()} → ${nextSize.toString()}`
+    this.rebuildSimulation({ preserveState: true })
+    this.syncControls()
+    this.draw()
   }
 
   private draw(): void {
@@ -376,6 +432,8 @@ class App implements AppController {
     this.elements.pauseButton.textContent = this.paused
       ? 'Resume simulation'
       : 'Pause simulation'
+    this.elements.degradationNotice.textContent = this.degradationNotice
+    this.elements.degradationNotice.hidden = this.degradationNotice.length === 0
   }
 
   private resolveSimulationSize(requestedSize: number): number {
@@ -390,6 +448,10 @@ class App implements AppController {
       MIN_SIMULATION_SIZE,
       MAX_SIMULATION_SIZE,
     )
+  }
+
+  private clearDegradationNotice(): void {
+    this.degradationNotice = ''
   }
 }
 
@@ -410,6 +472,15 @@ export function renderApp(root: HTMLElement, title: string): void {
           <span class="metric-label">FPS</span>
           <span class="metric-value" data-testid="fps-counter">0.0</span>
         </div>
+        <div class="metrics secondary-metric">
+          <span class="metric-label">AVG</span>
+          <span class="metric-value" data-testid="average-fps">0.0</span>
+        </div>
+        <p
+          class="degradation-notice"
+          data-testid="degradation-notice"
+          hidden
+        ></p>
       </section>
       <section class="control-panel" data-testid="control-panel">
         <div class="panel-header">
@@ -531,6 +602,12 @@ function queryElements(root: HTMLElement): AppElements {
     canvas: getElement(root, '[data-testid="fluid-canvas"]', HTMLCanvasElement),
     title: getElement(root, '[data-testid="app-title"]', HTMLElement),
     fps: getElement(root, '[data-testid="fps-counter"]', HTMLElement),
+    averageFps: getElement(root, '[data-testid="average-fps"]', HTMLElement),
+    degradationNotice: getElement(
+      root,
+      '[data-testid="degradation-notice"]',
+      HTMLElement,
+    ),
     velocityToggle: getElement(
       root,
       '[data-testid="velocity-overlay-toggle"]',
