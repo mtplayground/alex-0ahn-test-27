@@ -8,6 +8,7 @@ import { getRenderTheme, type ThemeId } from './render/palette'
 import { VelocityOverlayRenderer } from './render/velocityOverlayRenderer'
 import { type CanvasViewport, resizeCanvasToDisplaySize } from './resize'
 import { Simulation } from './sim/FluidSimulation'
+import { Grid } from './sim/Grid'
 
 interface AppWindow {
   addEventListener: Window['addEventListener']
@@ -41,6 +42,7 @@ interface AppElements {
   decaySlider: HTMLInputElement
   decayValue: HTMLElement
   resolutionSelect: HTMLSelectElement
+  resolutionValue: HTMLElement
   themeSelect: HTMLSelectElement
   pauseButton: HTMLButtonElement
   resetButton: HTMLButtonElement
@@ -63,6 +65,9 @@ const DEFAULT_CONTROLS: RuntimeControls = {
 }
 
 const RESOLUTION_OPTIONS = [64, 96, 128] as const
+const MIN_SIMULATION_SIZE = 32
+const MAX_SIMULATION_SIZE = 160
+const REFERENCE_VIEWPORT_EDGE = 900
 
 class App implements AppController {
   private readonly context: CanvasRenderingContext2D
@@ -136,7 +141,7 @@ class App implements AppController {
 
   private createSimulation(): Simulation {
     return new Simulation({
-      size: this.controls.size,
+      size: this.resolveSimulationSize(this.controls.size),
       diffusion: this.controls.diffusion,
       viscosity: this.controls.viscosity,
       decay: this.controls.decay,
@@ -148,7 +153,7 @@ class App implements AppController {
     return attachPointerController({
       canvas: this.elements.canvas,
       simulation: this.simulation,
-      gridSize: this.controls.size,
+      gridSize: this.simulation.getConfig().size,
     })
   }
 
@@ -221,6 +226,8 @@ class App implements AppController {
       },
     )
 
+    this.rebuildSimulation({ preserveState: true })
+    this.syncControls()
     this.draw()
   }
 
@@ -261,7 +268,7 @@ class App implements AppController {
     }
 
     this.controls.size = size
-    this.rebuildSimulation()
+    this.rebuildSimulation({ preserveState: true })
     this.syncControls()
     this.draw()
   }
@@ -285,14 +292,35 @@ class App implements AppController {
   }
 
   private readonly handleResetClick = (): void => {
-    this.rebuildSimulation()
+    this.rebuildSimulation({ preserveState: false })
     this.syncControls()
     this.draw()
   }
 
-  private rebuildSimulation(): void {
+  private rebuildSimulation({
+    preserveState,
+  }: {
+    preserveState: boolean
+  }): void {
+    const densitySnapshot = preserveState ? this.simulation.getDensity() : null
+    const velocitySnapshot = preserveState
+      ? this.simulation.getVelocity()
+      : null
+    const nextSimulation = this.createSimulation()
+
     this.pointerController.destroy()
-    this.simulation = this.createSimulation()
+
+    if (densitySnapshot && velocitySnapshot) {
+      nextSimulation.restoreState(
+        resampleGrid(densitySnapshot, nextSimulation.getConfig().size),
+        {
+          x: resampleGrid(velocitySnapshot.x, nextSimulation.getConfig().size),
+          y: resampleGrid(velocitySnapshot.y, nextSimulation.getConfig().size),
+        },
+      )
+    }
+
+    this.simulation = nextSimulation
     this.pointerController = this.attachPointerController()
   }
 
@@ -337,6 +365,9 @@ class App implements AppController {
     this.elements.decaySlider.value = this.controls.decay.toString()
     this.elements.decayValue.textContent = this.controls.decay.toFixed(3)
     this.elements.resolutionSelect.value = this.controls.size.toString()
+    this.elements.resolutionValue.textContent = formatGridSize(
+      this.simulation.getConfig().size,
+    )
     this.elements.themeSelect.value = this.controls.themeId
     this.elements.pauseButton.setAttribute(
       'aria-pressed',
@@ -345,6 +376,20 @@ class App implements AppController {
     this.elements.pauseButton.textContent = this.paused
       ? 'Resume simulation'
       : 'Pause simulation'
+  }
+
+  private resolveSimulationSize(requestedSize: number): number {
+    const viewportEdge = Math.max(
+      1,
+      Math.min(this.windowObject.innerWidth, this.windowObject.innerHeight),
+    )
+    const viewportScale = viewportEdge / REFERENCE_VIEWPORT_EDGE
+
+    return clampInteger(
+      Math.round(requestedSize * viewportScale),
+      MIN_SIMULATION_SIZE,
+      MAX_SIMULATION_SIZE,
+    )
   }
 }
 
@@ -424,6 +469,7 @@ export function renderApp(root: HTMLElement, title: string): void {
           <label class="control-field">
             <span class="control-topline">
               <span>Resolution</span>
+              <output data-testid="resolution-value">0 × 0</output>
             </span>
             <select data-testid="resolution-select">
               ${RESOLUTION_OPTIONS.map(
@@ -521,6 +567,11 @@ function queryElements(root: HTMLElement): AppElements {
       '[data-testid="resolution-select"]',
       HTMLSelectElement,
     ),
+    resolutionValue: getElement(
+      root,
+      '[data-testid="resolution-value"]',
+      HTMLElement,
+    ),
     themeSelect: getElement(
       root,
       '[data-testid="theme-select"]',
@@ -573,4 +624,44 @@ function isThemeId(themeId: string): themeId is ThemeId {
 
 function formatScientific(value: number): string {
   return value.toExponential(2)
+}
+
+function formatGridSize(size: number): string {
+  return `${size.toString()} × ${size.toString()}`
+}
+
+function resampleGrid(source: Grid, targetSize: number): Grid {
+  const target = new Grid(targetSize)
+
+  for (let j = 1; j <= targetSize; j += 1) {
+    const sampleY = ((j - 0.5) / targetSize) * source.size + 0.5
+
+    for (let i = 1; i <= targetSize; i += 1) {
+      const sampleX = ((i - 0.5) / targetSize) * source.size + 0.5
+      target.set(i, j, bilinearSample(source, sampleX, sampleY))
+    }
+  }
+
+  return target
+}
+
+function bilinearSample(grid: Grid, x: number, y: number): number {
+  const x0 = clampInteger(Math.floor(x), 0, grid.size + 1)
+  const x1 = clampInteger(x0 + 1, 0, grid.size + 1)
+  const y0 = clampInteger(Math.floor(y), 0, grid.size + 1)
+  const y1 = clampInteger(y0 + 1, 0, grid.size + 1)
+  const sx = x - x0
+  const sy = y - y0
+  const top = lerp(grid.get(x0, y0), grid.get(x1, y0), sx)
+  const bottom = lerp(grid.get(x0, y1), grid.get(x1, y1), sx)
+
+  return lerp(top, bottom, sy)
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
 }

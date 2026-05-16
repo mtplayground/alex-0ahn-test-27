@@ -24,6 +24,7 @@ describe('mountApp', () => {
 
   it('initializes the canvas shell, fps counter, and control panel bindings', () => {
     const root = document.createElement('div')
+    let resizeHandler: (() => void) | null = null
     const setTransform = vi.fn()
     const clearRect = vi.fn()
     const createImageData = vi.fn((width: number, height: number) => ({
@@ -38,7 +39,11 @@ describe('mountApp', () => {
     const moveTo = vi.fn()
     const lineTo = vi.fn()
     const stroke = vi.fn()
-    const addEventListener = vi.fn()
+    const addEventListener = vi.fn((event: string, handler: EventListener) => {
+      if (event === 'resize') {
+        resizeHandler = handler as () => void
+      }
+    })
     const removeEventListener = vi.fn()
     const setPointerCapture = vi.fn()
     const releasePointerCapture = vi.fn()
@@ -76,21 +81,23 @@ describe('mountApp', () => {
 
     let frameCallback: FrameRequestCallback | null = null
 
+    const windowObject = {
+      addEventListener,
+      removeEventListener,
+      innerWidth: 1280,
+      innerHeight: 720,
+      devicePixelRatio: 2,
+      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+        frameCallback = callback
+        return 1
+      }),
+      cancelAnimationFrame: vi.fn(),
+    }
+
     const app = mountApp({
       root,
       title: 'Unit Test Title',
-      windowObject: {
-        addEventListener,
-        removeEventListener,
-        innerWidth: 1280,
-        innerHeight: 720,
-        devicePixelRatio: 2,
-        requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
-          frameCallback = callback
-          return 1
-        }),
-        cancelAnimationFrame: vi.fn(),
-      },
+      windowObject,
     })
 
     expect(root.querySelector('[data-testid="fluid-canvas"]')).toBeInstanceOf(
@@ -115,6 +122,9 @@ describe('mountApp', () => {
         ) as HTMLSelectElement | null
       )?.value,
     ).toBe('96')
+    expect(
+      root.querySelector('[data-testid="resolution-value"]')?.textContent,
+    ).toBe('77 × 77')
     expect(
       (
         root.querySelector(
@@ -198,6 +208,26 @@ describe('mountApp', () => {
     resolutionSelect.dispatchEvent(new Event('change', { bubbles: true }))
 
     expect(resolutionSelect.value).toBe('128')
+    expect(
+      root.querySelector('[data-testid="resolution-value"]')?.textContent,
+    ).toBe('102 × 102')
+
+    if (resizeHandler === null) {
+      throw new Error('Expected resize handler to be registered.')
+    }
+
+    windowObject.innerWidth = 600
+    windowObject.innerHeight = 600
+    const runResize = resizeHandler as () => void
+    runResize()
+
+    expect(
+      root.querySelector('[data-testid="resolution-value"]')?.textContent,
+    ).toBe('85 × 85')
+    expect(
+      (root.querySelector('[data-testid="fluid-canvas"]') as HTMLCanvasElement)
+        .width,
+    ).toBe(1200)
     ;(
       root.querySelector('[data-testid="reset-button"]') as HTMLButtonElement
     ).click()
