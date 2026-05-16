@@ -101,6 +101,38 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(163, 184, 214, 0.22);
+  border-radius: 999px;
+  color: #eef6ff;
+  background: rgba(16, 32, 55, 0.78);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.toggle-button:hover {
+  border-color: rgba(163, 184, 214, 0.36);
+  background: rgba(24, 46, 76, 0.9);
+}
+
+.toggle-button:active {
+  transform: translateY(1px);
+}
+
+.toggle-button[aria-pressed='true'] {
+  border-color: rgba(121, 180, 255, 0.55);
+  background: rgba(56, 105, 182, 0.34);
+}
+
 @media (max-width: 640px) {
   .hud {
     top: 16px;

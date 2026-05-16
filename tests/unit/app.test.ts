@@ -31,6 +31,12 @@ describe('mountApp', () => {
       height,
     }))
     const putImageData = vi.fn()
+    const save = vi.fn()
+    const restore = vi.fn()
+    const beginPath = vi.fn()
+    const moveTo = vi.fn()
+    const lineTo = vi.fn()
+    const stroke = vi.fn()
     const addEventListener = vi.fn()
     const removeEventListener = vi.fn()
     const setPointerCapture = vi.fn()
@@ -57,6 +63,12 @@ describe('mountApp', () => {
         clearRect,
         createImageData,
         putImageData,
+        save,
+        restore,
+        beginPath,
+        moveTo,
+        lineTo,
+        stroke,
         imageSmoothingEnabled: true,
       } as unknown as CanvasRenderingContext2D
     }) as unknown as HTMLCanvasElement['getContext']
@@ -86,6 +98,11 @@ describe('mountApp', () => {
     expect(root.querySelector('[data-testid="fps-counter"]')?.textContent).toBe(
       '0.0',
     )
+    expect(
+      root
+        .querySelector('[data-testid="velocity-overlay-toggle"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('false')
     expect(addEventListener).toHaveBeenCalledWith(
       'resize',
       expect.any(Function),
@@ -105,6 +122,22 @@ describe('mountApp', () => {
     expect(clearRect).toHaveBeenCalled()
     expect(createImageData).toHaveBeenCalled()
     expect(putImageData).toHaveBeenCalled()
+    expect(stroke).not.toHaveBeenCalled()
+    ;(
+      root.querySelector(
+        '[data-testid="velocity-overlay-toggle"]',
+      ) as HTMLButtonElement
+    ).click()
+
+    expect(
+      root
+        .querySelector('[data-testid="velocity-overlay-toggle"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(
+      root.querySelector('[data-testid="velocity-overlay-toggle"]')
+        ?.textContent,
+    ).toBe('Hide velocity vectors')
 
     app.destroy()
     expect(removeEventListener).toHaveBeenCalledWith(

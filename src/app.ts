@@ -4,6 +4,7 @@ import {
 } from './input/pointerController'
 import { type AnimationLoopController, createAnimationLoop } from './loop'
 import { DensityRenderer } from './render/densityRenderer'
+import { VelocityOverlayRenderer } from './render/velocityOverlayRenderer'
 import { type CanvasViewport, resizeCanvasToDisplaySize } from './resize'
 import { Simulation } from './sim/FluidSimulation'
 
@@ -31,6 +32,7 @@ interface AppElements {
   canvas: HTMLCanvasElement
   title: HTMLElement
   fps: HTMLElement
+  velocityToggle: HTMLButtonElement
 }
 
 class App implements AppController {
@@ -38,8 +40,10 @@ class App implements AppController {
   private readonly loop: AnimationLoopController
   private readonly pointerController: PointerController
   private readonly renderer: DensityRenderer
+  private readonly velocityOverlayRenderer: VelocityOverlayRenderer
   private readonly simulation: Simulation
   private readonly simulationSize: number
+  private showVelocityOverlay = false
   private viewport: CanvasViewport
 
   constructor(
@@ -54,6 +58,7 @@ class App implements AppController {
 
     this.context = context
     this.renderer = new DensityRenderer()
+    this.velocityOverlayRenderer = new VelocityOverlayRenderer()
     this.simulationSize = 96
     this.simulation = new Simulation({
       size: this.simulationSize,
@@ -93,12 +98,21 @@ class App implements AppController {
 
   start(): void {
     this.windowObject.addEventListener('resize', this.handleResize)
+    this.elements.velocityToggle.addEventListener(
+      'click',
+      this.handleToggleClick,
+    )
+    this.syncVelocityToggle()
     this.draw()
     this.loop.start()
   }
 
   destroy(): void {
     this.windowObject.removeEventListener('resize', this.handleResize)
+    this.elements.velocityToggle.removeEventListener(
+      'click',
+      this.handleToggleClick,
+    )
     this.pointerController.destroy()
     this.loop.stop()
   }
@@ -117,6 +131,12 @@ class App implements AppController {
     this.draw()
   }
 
+  private readonly handleToggleClick = (): void => {
+    this.showVelocityOverlay = !this.showVelocityOverlay
+    this.syncVelocityToggle()
+    this.draw()
+  }
+
   private step(deltaMs: number): void {
     const dt = Math.min(deltaMs / 1000, 1 / 30)
     this.simulation.step(dt)
@@ -125,6 +145,24 @@ class App implements AppController {
   private draw(): void {
     this.context.clearRect(0, 0, this.viewport.width, this.viewport.height)
     this.renderer.render(this.context, this.simulation.getDensity())
+
+    if (this.showVelocityOverlay) {
+      this.velocityOverlayRenderer.render(
+        this.context,
+        this.simulation.getVelocity(),
+        this.viewport,
+      )
+    }
+  }
+
+  private syncVelocityToggle(): void {
+    this.elements.velocityToggle.setAttribute(
+      'aria-pressed',
+      this.showVelocityOverlay ? 'true' : 'false',
+    )
+    this.elements.velocityToggle.textContent = this.showVelocityOverlay
+      ? 'Hide velocity vectors'
+      : 'Show velocity vectors'
   }
 }
 
@@ -140,11 +178,19 @@ export function renderApp(root: HTMLElement, title: string): void {
       <section class="hud" data-testid="app-hud">
         <p class="eyebrow">Interactive Density Renderer</p>
         <h1 data-testid="app-title">${title}</h1>
-        <p class="copy">Drag across the canvas to inject velocity, and press to seed density into the water-blue field.</p>
+        <p class="copy">Drag across the canvas to inject velocity, press to seed density, and optionally overlay sparse flow vectors for debugging.</p>
         <div class="metrics">
           <span class="metric-label">FPS</span>
           <span class="metric-value" data-testid="fps-counter">0.0</span>
         </div>
+        <button
+          class="toggle-button"
+          data-testid="velocity-overlay-toggle"
+          type="button"
+          aria-pressed="false"
+        >
+          Show velocity vectors
+        </button>
       </section>
     </main>
   `
@@ -171,6 +217,11 @@ function queryElements(root: HTMLElement): AppElements {
     canvas: getElement(root, '[data-testid="fluid-canvas"]', HTMLCanvasElement),
     title: getElement(root, '[data-testid="app-title"]', HTMLElement),
     fps: getElement(root, '[data-testid="fps-counter"]', HTMLElement),
+    velocityToggle: getElement(
+      root,
+      '[data-testid="velocity-overlay-toggle"]',
+      HTMLButtonElement,
+    ),
   }
 }
 
