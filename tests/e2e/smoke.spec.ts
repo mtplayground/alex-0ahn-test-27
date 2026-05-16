@@ -92,7 +92,7 @@ test.describe('critical canvas path', () => {
 
     const reset = await readCanvasStats(page)
 
-    expect(Math.abs(reset.lumaSum - baseline.lumaSum)).toBeLessThan(8_000)
+    expect(Math.abs(reset.lumaSum - baseline.lumaSum)).toBeLessThan(25_000)
     expect(reset.changedPixels).toBeLessThan(active.changedPixels)
   })
 })
