@@ -153,6 +153,13 @@ describe('mountApp', () => {
         expect.any(Function),
       )
       expect(setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0)
+      expect(putImageData).toHaveBeenCalled()
+
+      const initialFrame = getImageStats(
+        putImageData.mock.calls[putImageData.mock.calls.length - 1]?.[0],
+      )
+      expect(initialFrame.lumaSum).toBeGreaterThan(70_000_000)
+      expect(initialFrame.centerLuma).toBeGreaterThan(initialFrame.cornerLuma)
 
       if (frameCallback === null) {
         throw new Error(
@@ -259,12 +266,24 @@ describe('mountApp', () => {
           ) as HTMLCanvasElement
         ).width,
       ).toBe(1200)
+
+      const resetBaseline = getImageStats(
+        putImageData.mock.calls[putImageData.mock.calls.length - 1]?.[0],
+      )
       ;(
         root.querySelector('[data-testid="reset-button"]') as HTMLButtonElement
       ).click()
       expect(
         root.querySelector('[data-testid="degradation-notice"]')?.textContent,
       ).toBe('')
+
+      const resetFrame = getImageStats(
+        putImageData.mock.calls[putImageData.mock.calls.length - 1]?.[0],
+      )
+      expect(resetFrame.lumaSum).toBeGreaterThan(70_000_000)
+      expect(Math.abs(resetFrame.lumaSum - resetBaseline.lumaSum)).toBeLessThan(
+        5_000_000,
+      )
 
       app.destroy()
       expect(removeEventListener).toHaveBeenCalledWith(
@@ -274,3 +293,73 @@ describe('mountApp', () => {
     },
   )
 })
+
+function getImageStats(imageData: unknown): {
+  lumaSum: number
+  changedPixels: number
+  centerLuma: number
+  cornerLuma: number
+} {
+  if (!isImageDataLike(imageData)) {
+    throw new Error('Expected putImageData to receive image data.')
+  }
+
+  let lumaSum = 0
+  let changedPixels = 0
+  let centerLuma = 0
+  let cornerLuma = 0
+  let centerSamples = 0
+  let cornerSamples = 0
+
+  for (let index = 0; index < imageData.data.length; index += 4) {
+    const red = imageData.data[index] ?? 0
+    const green = imageData.data[index + 1] ?? 0
+    const blue = imageData.data[index + 2] ?? 0
+    const alpha = imageData.data[index + 3] ?? 0
+    const luma = red + green + blue + alpha
+    const pixelIndex = index / 4
+    const x = pixelIndex % imageData.width
+    const y = Math.floor(pixelIndex / imageData.width)
+
+    lumaSum += luma
+
+    if (luma > 130) {
+      changedPixels += 1
+    }
+
+    if (
+      x >= imageData.width * 0.35 &&
+      x <= imageData.width * 0.65 &&
+      y >= imageData.height * 0.35 &&
+      y <= imageData.height * 0.65
+    ) {
+      centerLuma += luma
+      centerSamples += 1
+    }
+
+    if (x < imageData.width * 0.15 && y < imageData.height * 0.15) {
+      cornerLuma += luma
+      cornerSamples += 1
+    }
+  }
+
+  return {
+    lumaSum,
+    changedPixels,
+    centerLuma: centerSamples > 0 ? centerLuma / centerSamples : 0,
+    cornerLuma: cornerSamples > 0 ? cornerLuma / cornerSamples : 0,
+  }
+}
+
+function isImageDataLike(
+  value: unknown,
+): value is { data: Uint8ClampedArray; width: number; height: number } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'data' in value &&
+    'width' in value &&
+    'height' in value &&
+    value.data instanceof Uint8ClampedArray
+  )
+}

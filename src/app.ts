@@ -71,6 +71,12 @@ const RESOLUTION_OPTIONS = [64, 96, 128] as const
 const MIN_SIMULATION_SIZE = 32
 const MAX_SIMULATION_SIZE = 160
 const REFERENCE_VIEWPORT_EDGE = 900
+const INITIAL_PULSE_HALF_WIDTH = 1
+const INITIAL_PULSE_DENSITY = 36
+const INITIAL_PULSE_VELOCITY_X = 1.25
+const INITIAL_PULSE_VELOCITY_Y = -0.75
+const INITIAL_PULSE_STEP_DT = 1 / 180
+const INITIAL_PULSE_HOLD_MS = 64
 
 class App implements AppController {
   private readonly context: CanvasRenderingContext2D
@@ -85,6 +91,7 @@ class App implements AppController {
   private showVelocityOverlay = false
   private averageFps = 0
   private degradationNotice = ''
+  private stepDelayRemainingMs = 0
   private viewport: CanvasViewport
 
   constructor(
@@ -139,6 +146,7 @@ class App implements AppController {
   start(): void {
     this.windowObject.addEventListener('resize', this.handleResize)
     this.bindControls()
+    this.primeSimulation()
     this.syncControls()
     this.draw()
     this.loop.start()
@@ -314,6 +322,7 @@ class App implements AppController {
     this.performanceMonitor.reset()
     this.clearDegradationNotice()
     this.rebuildSimulation({ preserveState: false })
+    this.primeSimulation()
     this.syncControls()
     this.draw()
   }
@@ -347,6 +356,14 @@ class App implements AppController {
 
   private step(deltaMs: number): void {
     if (this.paused) {
+      return
+    }
+
+    if (this.stepDelayRemainingMs > 0) {
+      this.stepDelayRemainingMs = Math.max(
+        0,
+        this.stepDelayRemainingMs - deltaMs,
+      )
       return
     }
 
@@ -400,6 +417,12 @@ class App implements AppController {
         this.viewport,
       )
     }
+  }
+
+  private primeSimulation(): void {
+    seedInitialPulse(this.simulation)
+    this.simulation.step(INITIAL_PULSE_STEP_DT)
+    this.stepDelayRemainingMs = INITIAL_PULSE_HOLD_MS
   }
 
   private syncControls(): void {
@@ -741,4 +764,29 @@ function lerp(a: number, b: number, t: number): number {
 
 function clampInteger(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
+}
+
+function seedInitialPulse(simulation: Simulation): void {
+  const size = simulation.getConfig().size
+  const center = Math.max(1, Math.round(size / 2))
+
+  for (
+    let y = center - INITIAL_PULSE_HALF_WIDTH;
+    y <= center + INITIAL_PULSE_HALF_WIDTH;
+    y += 1
+  ) {
+    for (
+      let x = center - INITIAL_PULSE_HALF_WIDTH;
+      x <= center + INITIAL_PULSE_HALF_WIDTH;
+      x += 1
+    ) {
+      simulation.addDensity(x, y, INITIAL_PULSE_DENSITY)
+      simulation.addVelocity(
+        x,
+        y,
+        INITIAL_PULSE_VELOCITY_X,
+        INITIAL_PULSE_VELOCITY_Y,
+      )
+    }
+  }
 }
