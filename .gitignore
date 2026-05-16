@@ -1,5 +1,7 @@
 target/
 dist/
+playwright-report/
+test-results/
 node_modules/
 .gh_token
 .claude/
