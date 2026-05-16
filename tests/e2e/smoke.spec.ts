@@ -8,7 +8,7 @@ test('loads the landing page shell', async ({ page }) => {
   await expect(page.getByTestId('fps-counter')).not.toHaveText('0.0')
   await expect(
     page.getByText(
-      'Full-screen canvas, resize handling, and a requestAnimationFrame loop are active.',
+      'Density values are upsampled into ImageData and rendered with a water-blue palette.',
     ),
   ).toBeVisible()
 })
