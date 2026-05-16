@@ -31,6 +31,22 @@ describe('mountApp', () => {
       height,
     }))
     const putImageData = vi.fn()
+    const addEventListener = vi.fn()
+    const removeEventListener = vi.fn()
+    const setPointerCapture = vi.fn()
+    const releasePointerCapture = vi.fn()
+
+    HTMLCanvasElement.prototype.getBoundingClientRect = vi.fn(
+      () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 1280,
+          height: 720,
+        }) as DOMRect,
+    )
+    HTMLCanvasElement.prototype.setPointerCapture = setPointerCapture
+    HTMLCanvasElement.prototype.releasePointerCapture = releasePointerCapture
 
     HTMLCanvasElement.prototype.getContext = vi.fn(function thisGetContext(
       this: HTMLCanvasElement,
@@ -51,8 +67,8 @@ describe('mountApp', () => {
       root,
       title: 'Unit Test Title',
       windowObject: {
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
+        addEventListener,
+        removeEventListener,
         innerWidth: 1280,
         innerHeight: 720,
         devicePixelRatio: 2,
@@ -69,6 +85,10 @@ describe('mountApp', () => {
     )
     expect(root.querySelector('[data-testid="fps-counter"]')?.textContent).toBe(
       '0.0',
+    )
+    expect(addEventListener).toHaveBeenCalledWith(
+      'resize',
+      expect.any(Function),
     )
     expect(setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0)
 
@@ -87,5 +107,9 @@ describe('mountApp', () => {
     expect(putImageData).toHaveBeenCalled()
 
     app.destroy()
+    expect(removeEventListener).toHaveBeenCalledWith(
+      'resize',
+      expect.any(Function),
+    )
   })
 })
