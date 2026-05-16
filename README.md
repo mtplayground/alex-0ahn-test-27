@@ -1,6 +1,6 @@
 # alex-0ahn-test-27
 
-Vite + TypeScript project scaffold for the fluid playground application.
+Vite + TypeScript fluid playground scaffold with a full-screen canvas shell, resize handling, and a requestAnimationFrame render loop.
 
 ## Requirements
 
