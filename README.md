@@ -14,6 +14,8 @@ pnpm install
 pnpm dev
 pnpm lint
 pnpm format
+pnpm test:unit
+pnpm test:e2e
 ```
 
 The Vite dev server is configured to listen on `0.0.0.0:8080`.
@@ -24,6 +26,11 @@ The Vite dev server is configured to listen on `0.0.0.0:8080`.
 pnpm build
 pnpm preview
 ```
+
+## Testing
+
+- `pnpm test:unit` runs Vitest in a `jsdom` environment.
+- `pnpm test:e2e` runs the Playwright Chromium smoke test against a local Vite server.
 
 ## Environment
 
