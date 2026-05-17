@@ -40,7 +40,7 @@
   - Vitest for unit coverage of app wiring, simulation primitives, rendering, input, and performance logic.
   - Playwright Chromium for critical end-to-end behavior.
 - Current browser coverage includes:
-  - visible seeded fluid on first load,
+  - visible seeded fluid on first load, validated by center-vs-corner brightness sampling instead of a single weak luma threshold,
   - onboarding hint visibility and dismissal,
   - drag-to-render change,
   - control-panel impact on rendering,
