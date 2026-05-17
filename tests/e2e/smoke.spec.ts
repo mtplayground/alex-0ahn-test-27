@@ -8,14 +8,17 @@ test.describe('critical canvas path', () => {
     await page.goto('/')
     await page.waitForTimeout(500)
 
-    const stats = await readCanvasRegionStats(page, {
-      xStart: 0.35,
-      xEnd: 0.65,
-      yStart: 0.35,
-      yEnd: 0.65,
+    const stats = await readInitialVisibilityStats(page, {
+      x: 0.5,
+      y: 0.5,
+      width: 200,
+      height: 200,
     })
 
-    expect(stats.averageLuma).toBeGreaterThan(100)
+    expect(stats.brightPixelsAboveBackground).toBeGreaterThanOrEqual(4_000)
+    expect(
+      stats.centerAverageLuma - stats.backgroundAverageLuma,
+    ).toBeGreaterThanOrEqual(40)
   })
 
   test('shows the pointer hint on load and hides it after pointerdown', async ({
@@ -56,8 +59,7 @@ test.describe('critical canvas path', () => {
 
     const after = await readCanvasStats(page)
 
-    expect(after.lumaSum).toBeGreaterThan(before.lumaSum + 10_000)
-    expect(after.changedPixels).toBeGreaterThan(250)
+    expect(after.changedPixels - before.changedPixels).toBeGreaterThan(1_500)
   })
 
   test('changing a control slider affects the rendered output', async ({
@@ -197,20 +199,24 @@ async function readCanvasStats(
   })
 }
 
-async function readCanvasRegionStats(
+async function readInitialVisibilityStats(
   page: Page,
   {
-    xStart,
-    xEnd,
-    yStart,
-    yEnd,
+    x,
+    y,
+    width,
+    height,
   }: {
-    xStart: number
-    xEnd: number
-    yStart: number
-    yEnd: number
+    x: number
+    y: number
+    width: number
+    height: number
   },
-): Promise<{ averageLuma: number; changedPixels: number }> {
+): Promise<{
+  centerAverageLuma: number
+  backgroundAverageLuma: number
+  brightPixelsAboveBackground: number
+}> {
   return page.getByTestId('fluid-canvas').evaluate(
     (element, region) => {
       const canvas = element as HTMLCanvasElement
@@ -220,38 +226,89 @@ async function readCanvasRegionStats(
         throw new Error('Canvas 2D context is unavailable during the E2E test.')
       }
 
-      const width = canvas.width
-      const height = canvas.height
-      const x0 = Math.floor(width * region.xStart)
-      const x1 = Math.floor(width * region.xEnd)
-      const y0 = Math.floor(height * region.yStart)
-      const y1 = Math.floor(height * region.yEnd)
-      const sampleWidth = Math.max(1, x1 - x0)
-      const sampleHeight = Math.max(1, y1 - y0)
-      const { data } = context.getImageData(x0, y0, sampleWidth, sampleHeight)
-      let lumaSum = 0
-      let changedPixels = 0
+      const centerWidth = Math.min(region.width, canvas.width)
+      const centerHeight = Math.min(region.height, canvas.height)
+      const centerX = Math.max(
+        0,
+        Math.floor(canvas.width * region.x - centerWidth / 2),
+      )
+      const centerY = Math.max(
+        0,
+        Math.floor(canvas.height * region.y - centerHeight / 2),
+      )
+      const centerImage = context.getImageData(
+        centerX,
+        centerY,
+        centerWidth,
+        centerHeight,
+      )
 
-      for (let index = 0; index < data.length; index += 4) {
-        const red = data[index] ?? 0
-        const green = data[index + 1] ?? 0
-        const blue = data[index + 2] ?? 0
-        const alpha = data[index + 3] ?? 0
+      const sampleCorner = (xStart: number, yStart: number): number => {
+        const cornerWidth = Math.max(1, Math.floor(canvas.width * 0.12))
+        const cornerHeight = Math.max(1, Math.floor(canvas.height * 0.12))
+        const { data } = context.getImageData(
+          xStart,
+          yStart,
+          cornerWidth,
+          cornerHeight,
+        )
+
+        let total = 0
+
+        for (let index = 0; index < data.length; index += 4) {
+          const red = data[index] ?? 0
+          const green = data[index + 1] ?? 0
+          const blue = data[index + 2] ?? 0
+          const alpha = data[index + 3] ?? 0
+          total += red + green + blue + alpha
+        }
+
+        return total / Math.max(1, data.length / 4)
+      }
+
+      const backgroundSamples = [
+        sampleCorner(0, 0),
+        sampleCorner(
+          Math.max(0, canvas.width - Math.floor(canvas.width * 0.12)),
+          0,
+        ),
+        sampleCorner(
+          0,
+          Math.max(0, canvas.height - Math.floor(canvas.height * 0.12)),
+        ),
+        sampleCorner(
+          Math.max(0, canvas.width - Math.floor(canvas.width * 0.12)),
+          Math.max(0, canvas.height - Math.floor(canvas.height * 0.12)),
+        ),
+      ]
+      const backgroundAverageLuma =
+        backgroundSamples.reduce((sum, value) => sum + value, 0) /
+        backgroundSamples.length
+
+      let centerLumaTotal = 0
+      let brightPixelsAboveBackground = 0
+      const threshold = backgroundAverageLuma + 40
+
+      for (let index = 0; index < centerImage.data.length; index += 4) {
+        const red = centerImage.data[index] ?? 0
+        const green = centerImage.data[index + 1] ?? 0
+        const blue = centerImage.data[index + 2] ?? 0
+        const alpha = centerImage.data[index + 3] ?? 0
         const luma = red + green + blue + alpha
-        lumaSum += luma
+        centerLumaTotal += luma
 
-        if (luma > 160) {
-          changedPixels += 1
+        if (luma >= threshold) {
+          brightPixelsAboveBackground += 1
         }
       }
 
-      const pixelCount = Math.max(1, data.length / 4)
-
       return {
-        averageLuma: lumaSum / pixelCount,
-        changedPixels,
+        centerAverageLuma:
+          centerLumaTotal / Math.max(1, centerImage.data.length / 4),
+        backgroundAverageLuma,
+        brightPixelsAboveBackground,
       }
     },
-    { xStart, xEnd, yStart, yEnd },
+    { x, y, width, height },
   )
 }
