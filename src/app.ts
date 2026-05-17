@@ -1,4 +1,12 @@
-import { DEFAULT_POINTER_DENSITY_AMOUNT } from './config/defaults'
+import {
+  DEFAULT_POINTER_DENSITY_AMOUNT,
+  INITIAL_PULSE_DENSITY,
+  INITIAL_PULSE_HALF_WIDTH,
+  INITIAL_PULSE_STEP_DT,
+  INITIAL_PULSE_VELOCITY_X,
+  INITIAL_PULSE_VELOCITY_Y,
+  INITIAL_PULSE_WARMUP_STEPS,
+} from './config/defaults'
 import {
   attachPointerController,
   type PointerController,
@@ -79,11 +87,6 @@ const RESOLUTION_OPTIONS = [64, 96, 128] as const
 const MIN_SIMULATION_SIZE = 32
 const MAX_SIMULATION_SIZE = 160
 const REFERENCE_VIEWPORT_EDGE = 900
-const INITIAL_PULSE_HALF_WIDTH = 1
-const INITIAL_PULSE_DENSITY = 36
-const INITIAL_PULSE_VELOCITY_X = 1.25
-const INITIAL_PULSE_VELOCITY_Y = -0.75
-const INITIAL_PULSE_STEP_DT = 1 / 180
 const INITIAL_PULSE_HOLD_MS = 64
 const POINTER_HINT_TIMEOUT_MS = 3_000
 
@@ -465,7 +468,9 @@ class App implements AppController {
 
   private primeSimulation(): void {
     seedInitialPulse(this.simulation)
-    this.simulation.step(INITIAL_PULSE_STEP_DT)
+    for (let step = 0; step < INITIAL_PULSE_WARMUP_STEPS; step += 1) {
+      this.simulation.step(INITIAL_PULSE_STEP_DT)
+    }
     this.stepDelayRemainingMs = INITIAL_PULSE_HOLD_MS
   }
 
