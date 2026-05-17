@@ -2,25 +2,24 @@
 
 ## Current project shape
 
-This repository already contains a shipped Vite + TypeScript browser app for a 2D fluid simulation. The current stack is:
+This repository is already a working Vite + TypeScript fluid playground with:
 
-- Canvas-based rendering and RAF app shell in `src/app.ts`
-- Simulation core in `src/sim/`
-- Rendering helpers in `src/render/`
-- Pointer input mapping in `src/input/`
-- Performance fallback logic in `src/performance/`
-- Unit and Playwright coverage in `tests/unit/` and `tests/e2e/`
+- full-screen canvas rendering in `src/app.ts`
+- simulation core in `src/sim/`
+- density and overlay rendering in `src/render/`
+- pointer injection in `src/input/`
+- responsive controls, performance fallback, and onboarding UI in `src/app.ts`
+- Playwright coverage for startup visibility, hint behavior, interaction, control impact, and reset
 
-The new issue batch should build on that existing structure rather than introduce new top-level subsystems.
+The next issue batch should strengthen the existing startup-visibility contract rather than add new product areas.
 
 ## Relevant file organization
 
 ```text
 src/
   app.ts
-  loop.ts
-  main.ts
-  resize.ts
+  config/
+    defaults.ts
   input/
     coordinateMap.ts
     pointerController.ts
@@ -31,9 +30,9 @@ src/
     palette.ts
     velocityOverlayRenderer.ts
   sim/
-    boundary.ts
     FluidSimulation.ts
     Grid.ts
+    boundary.ts
     project.ts
     steps.ts
     types.ts
@@ -48,69 +47,47 @@ tests/
     sim/
 ```
 
-## Shared types and state surfaces
+## Shared state and configuration surfaces
 
-- `FluidSimulation` is the top-level state holder and already exposes density/velocity injection, stepping, config mutation, reset, and state snapshot/restore.
-- Renderer state is split between:
-  - density-to-`ImageData` rendering in `src/render/densityRenderer.ts`
-  - optional velocity overlay rendering in `src/render/velocityOverlayRenderer.ts`
-- App/UI state is centralized in `src/app.ts`, which owns:
-  - the canvas and HUD DOM
-  - control panel bindings
-  - resize handling
-  - pause/reset/theme/resolution toggles
-  - performance degradation notices
-
-For this batch, new defaults should stay as shared exported constants rather than being hardcoded inside `app.ts`, the pointer controller, or the renderer.
+- `src/config/defaults.ts` already exists and should become the canonical home for any user-facing startup seed defaults added in this batch.
+- `src/app.ts` currently owns the startup pulse constants and warm-up behavior:
+  - density magnitude
+  - injected area size
+  - initial velocity impulse
+  - pre-draw warm-up timing
+- `tests/e2e/smoke.spec.ts` already contains first-load canvas sampling helpers and is the right place to harden visibility assertions instead of creating broad new test infrastructure.
 
 ## Issue dependency map
 
-1. Issue `#33` adds automatic initial density and velocity injection at startup and on reset.
-   - Depends on existing `FluidSimulation.addDensity`, `addVelocity`, and reset flow in `src/app.ts`.
-   - Likely touches the app boot/reset orchestration only.
+1. Issue `#41` raises the startup seed’s density, area, velocity, and warm-up so the app opens with a clearly visible expanding plume.
+   - Depends on the existing seeded-startup flow in `src/app.ts`.
+   - Should move the seed constants into `src/config/defaults.ts` if they are still local to `app.ts`.
 
-2. Issue `#34` increases default visibility and centralizes defaults.
-   - Depends on `#33` because the startup pulse and pointer brush should share the same “visible by default” configuration story.
-   - Should introduce a small shared config module, likely `src/config/defaults.ts`, consumed by:
-     - `pointerController`
-     - density renderer
-     - control panel brush-strength binding
-
-3. Issue `#35` adds the in-canvas onboarding hint.
-   - Depends on existing app shell and pointer lifecycle.
-   - Should stay in DOM/CSS/app state, not inside the simulation core.
-   - Needs a clean “first meaningful interaction” signal from the pointer path.
-
-4. Issue `#36` adds E2E verification for startup-visible fluid and hint dismissal.
-   - Depends on `#33`, `#34`, and `#35`.
-   - Should extend the Playwright suite with deterministic assertions on:
-     - visible initial fluid without user interaction
-     - hint visible on load
-     - hint hidden after first pointerdown
+2. Issue `#42` strengthens the startup-visibility E2E contract.
+   - Depends on `#41`, because the stricter assertions are only appropriate after the seed is intentionally made much more visible.
+   - Should extend the existing center-region sampler with:
+     - a count of pixels above a stronger brightness delta threshold
+     - contrast comparison between the center region and sampled corner/background regions
 
 ## Key design decisions
 
-- Keep startup injection in the app orchestration layer, not in `FluidSimulation.step()`.
-  Reason: it is a UX/bootstrap concern, not a permanent physical rule of the solver.
+- Treat startup seed visibility as a first-class product contract.
+  Reason: the app is now expected to feel alive immediately on load, not merely become active after user interaction.
 
-- Represent initial injection as a reusable helper.
-  Reason: startup and reset should trigger exactly the same seeded state.
+- Centralize startup-seed defaults in `src/config/defaults.ts`.
+  Reason: the pointer brush defaults are already centralized there, and the startup seed belongs to the same “visibility baseline” configuration family.
 
-- Centralize user-facing default constants in one module.
-  Reason: pointer brush strength, renderer scale, and control panel defaults should not drift.
+- Keep the seed orchestration in `src/app.ts`, not in `Simulation.step()`.
+  Reason: startup priming is still a presentation/bootstrap concern rather than a permanent simulation rule.
 
-- Keep the onboarding hint as DOM overlay state with CSS transitions.
-  Reason: easier styling, easier accessibility, and stable Playwright selectors.
+- Prefer E2E assertions based on regional contrast instead of a single raw luma threshold.
+  Reason: stronger tests should verify that users would actually perceive a visible fluid mass, not just that some canvas pixels changed numerically.
 
-- Use “first valid pointer interaction” as the hide trigger.
-  Reason: it aligns with the actual injection model and avoids disappearing on unrelated movement noise.
-
-- Preserve deterministic E2E checks by sampling canvas pixels after a short wait instead of relying only on text/UI state.
-  Reason: the main user-visible regression risk is “simulation loads but nothing is visible.”
+- Preserve the current Playwright file as the main browser contract surface.
+  Reason: the startup-visible-fluid and pointer-hint checks already live there, so strengthening them in place keeps the browser contract easy to scan and maintain.
 
 ## Suggested implementation order
 
-1. Add reusable startup/reset seeding helper (`#33`).
-2. Extract and wire shared default config plus brush-strength control (`#34`).
-3. Add the instructional overlay and fade-out behavior (`#35`).
-4. Extend Playwright coverage for initial visible fluid and hint lifecycle (`#36`).
+1. Move or add startup pulse constants into `src/config/defaults.ts`.
+2. Increase seed density, footprint, velocity, and warm-up in `src/app.ts` (`#41`).
+3. Tighten first-load Playwright assertions around center visibility and center-vs-background contrast (`#42`).
